@@ -1,6 +1,8 @@
 ```
 # generate jsonl file
-python generate_toucan.py -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet -l 10 -o toucan.jsonl
+python scripts/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet --sample-size 10 -o data/toucan.jsonl
+# generate all jsonl in dir
+python scripts/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M
 # make jsonl file readable
-python pretty_toucan.py -i toucan.jsonl -n 5 > toucan5.txt
+python scripts/pretty_toucan.py -i data/toucan.jsonl -n 5 > data/toucan5.txt
 ```
