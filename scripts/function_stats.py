@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -22,8 +22,9 @@ def iter_jsonl_files(root: Path) -> list[Path]:
     return sorted(root.rglob("*.jsonl"))
 
 
-def extract_functions(record: dict) -> list[str]:
+def extract_functions(record: dict):
     funcs: list[str] = []
+    tool_meta: dict[str, dict] = {}
     available = record.get("available_tools")
     try:
         tools = json.loads(available) if isinstance(available, str) else available
@@ -35,6 +36,7 @@ def extract_functions(record: dict) -> list[str]:
             name = func.get("name")
             if name:
                 funcs.append(name)
+                tool_meta.setdefault(name, func)
     messages = record.get("messages")
     if isinstance(messages, str):
         try:
@@ -60,7 +62,8 @@ def extract_functions(record: dict) -> list[str]:
                 name = tool.get("name")
                 if name:
                     funcs.append(name)
-    return funcs
+                    tool_meta.setdefault(name, tool)
+    return funcs, tool_meta
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,6 +83,12 @@ def parse_args() -> argparse.Namespace:
         help="CSV file to save aggregated counts (default: function_stats.csv).",
     )
     parser.add_argument(
+        "--meta-output",
+        type=Path,
+        default=Path("function_meta.json"),
+        help="JSON file to store function metadata (default: function_meta.json).",
+    )
+    parser.add_argument(
         "--top",
         type=int,
         default=None,
@@ -94,8 +103,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def process_file(file: Path) -> tuple[Counter[str], int]:
+def process_file(file: Path) -> tuple[Counter[str], dict[str, dict], int]:
     local_counter: Counter[str] = Counter()
+    local_meta: dict[str, dict] = {}
     local_total = 0
     with file.open("r", encoding="utf-8") as fh:
         for line in fh:
@@ -107,9 +117,12 @@ def process_file(file: Path) -> tuple[Counter[str], int]:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            for name in extract_functions(record):
+            funcs, meta = extract_functions(record)
+            for name in funcs:
                 local_counter[name] += 1
-    return local_counter, local_total
+            for name, info in meta.items():
+                local_meta.setdefault(name, info)
+    return local_counter, local_meta, local_total
 
 
 def main() -> None:
@@ -120,28 +133,33 @@ def main() -> None:
 
     counter: Counter[str] = Counter()
     total_records = 0
+    meta_store: dict[str, dict] = {}
 
     workers = max(1, args.workers)
     print(f"[INFO] Found {len(files)} jsonl files. Processing with {workers} worker(s).")
     if workers == 1 or len(files) == 1:
         for file in files:
             print(f"[INFO] Processing {file}")
-            local_counter, local_total = process_file(file)
+            local_counter, local_meta, local_total = process_file(file)
             counter.update(local_counter)
             total_records += local_total
+            for name, info in local_meta.items():
+                meta_store.setdefault(name, info)
     else:
         with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(process_file, file): file for file in files}
             for future in as_completed(futures):
                 file = futures[future]
                 try:
-                    local_counter, local_total = future.result()
+                    local_counter, local_meta, local_total = future.result()
                 except Exception as exc:
                     print(f"[WARN] Failed processing {file}: {exc}")
                     continue
                 print(f"[INFO] Finished {file} (records: {local_total})")
                 counter.update(local_counter)
                 total_records += local_total
+                for name, info in local_meta.items():
+                    meta_store.setdefault(name, info)
 
     items = counter.most_common(args.top) if args.top else counter.most_common()
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -150,9 +168,13 @@ def main() -> None:
         writer.writerow(["function_name", "count"])
         for name, count in items:
             writer.writerow([name, count])
+    with args.meta_output.open("w", encoding="utf-8") as metaj:
+        json.dump(meta_store, metaj, ensure_ascii=False, indent=2)
 
     print(f"Processed {total_records} records from {len(files)} files.")
-    print(f"Unique functions: {len(counter)}. Output saved to {args.output}.")
+    print(
+        f"Unique functions: {len(counter)}. Count CSV: {args.output}. Metadata JSON: {args.meta_output}."
+    )
 
 
 if __name__ == "__main__":
