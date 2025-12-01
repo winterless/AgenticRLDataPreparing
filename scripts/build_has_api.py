@@ -83,9 +83,10 @@ def iter_function_calls(record: dict):
 
 def question_random(func_name: str, all_funcs: list[str], num_neg: int) -> dict | None:
     pool = [f for f in all_funcs if f != func_name]
-    if len(pool) < num_neg:
+    if not pool:
         return None
-    negs = random.sample(pool, num_neg)
+    k = min(num_neg, len(pool))
+    negs = random.sample(pool, k)
     options = negs + [func_name]
     random.shuffle(options)
     return {
@@ -98,9 +99,10 @@ def question_random(func_name: str, all_funcs: list[str], num_neg: int) -> dict 
 def question_cluster(func_name: str, clusters: dict[str, list[str]], num_neg: int) -> dict | None:
     prefix = split_prefix(func_name)
     candidates = [f for f in clusters.get(prefix, []) if f != func_name]
-    if len(candidates) < num_neg:
+    if not candidates:
         return None
-    negs = random.sample(candidates, num_neg)
+    k = min(num_neg, len(candidates))
+    negs = random.sample(candidates, k)
     options = negs + [func_name]
     random.shuffle(options)
     return {
@@ -132,9 +134,10 @@ def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict
     correct_param = random.choice(required)
     # gather other parameter names as negatives
     candidates = [p for p in properties.keys() if p != correct_param]
-    if len(candidates) < num_neg:
+    if not candidates:
         return None
-    negs = random.sample(candidates, num_neg)
+    k = min(num_neg, len(candidates))
+    negs = random.sample(candidates, k)
     options = negs + [correct_param]
     random.shuffle(options)
     return {

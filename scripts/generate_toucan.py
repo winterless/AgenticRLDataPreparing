@@ -52,6 +52,7 @@ def convert(
         reservoir: list[dict] = []
         if seed is not None:
             random.seed(seed)
+        
         seen = 0
         cap = sample_size
         with output_path.open("w", encoding="utf-8") as sink:
