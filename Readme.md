@@ -5,9 +5,11 @@
     ```python scripts/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M --workers 8```
     1.2 采集 Toucan-1.5M 等多工具轨迹数据，保留部分失败样本用于恢复分支。
     1.3 基于 question/response 质量指标做清洗。
+    ```clean_toucan.py```
 
 2. **任务分层与标签**
     - 对轨迹按工具集合、任务类型打标签。
+    ```
     - 识别 reasoning / action / exception 等节点角色。
 
 3. **节点筛选**
