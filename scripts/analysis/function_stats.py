@@ -3,7 +3,7 @@
 Aggregate tool/function usage statistics from Toucan jsonl files.
 
 Example:
-    python function_stats.py -i Toucan-1.5M -o stats.csv
+    python scripts/analysis/function_stats.py -i Toucan-1.5M/Toucan-1.5M -o stats/function_stats.csv
 """
 
 from __future__ import annotations

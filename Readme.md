@@ -2,10 +2,10 @@
 
 1. **原始数据准备**
     1.1 生成需要处理的全量数据  
-    ```python scripts/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M --workers 8```
+    ```python scripts/data_preprocess/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M --workers 8```
     1.2 采集 Toucan-1.5M 等多工具轨迹数据，保留部分失败样本用于恢复分支。
     1.3 基于 question/response 质量指标做清洗。
-    ```clean_toucan.py```
+    ```python scripts/data_preprocess/clean_toucan.py```
 
 2. **任务分层与标签**
     - 对轨迹按工具集合、任务类型打标签。
@@ -41,9 +41,10 @@
 4. **候选生成（多分支）**
     - 仅在assistant (function_call: *)行生效
     - 选项1：从stats/function_stats.json中抽取5个函数，与正确函数混在一起，构成选择题（屏蔽可选选项）
-    - 选项2：从stats/function_stats.json中抽取5个和正确函数聚类函数，与正确函数混在一起，构成选择题（屏蔽可选选项和之前的函数名）
-    - 选项3：从原有轨迹候选数据中，列出所有available_tools选项，让模型选择
-    - 选项4：在正确函数选项下，从正确函数的参数中挑选
+    <!-- - （废弃）选项2：从stats/function_stats.json中抽取5个和正确函数聚类函数，与正确函数混在一起，构成选择题（屏蔽可选选项和之前的函数名） -->
+    - 选项2：从原有轨迹候选数据中，列出所有available_tools选项，让模型选择
+    - 选项3：在正确函数选项下，从正确函数的参数中挑选正确的参数组合
+    - 选项4：在正确的函数参数组合下，挑选正确的参数值
 
 ```
 参数值生成思路
@@ -84,5 +85,5 @@
       "answer_type": "single_choice",
   }
 生成若干扰动选项+1 个正确选项，打乱顺序；题干说明“哪个参数取值正确”。
-整体流程都在 scripts/build_has_api.py 的 question_param_values、_mutate_value、_format_arg_values 中。
+整体流程都在 scripts/build_has/build_has_api.py 的 question_param_values、_mutate_value、_format_arg_values 中。
 ```

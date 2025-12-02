@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = BASE_DIR / "Toucan-1.5M" / "Toucan-1.5M"
 DEFAULT_OUTPUT = BASE_DIR / "data" / "Toucan-1.5M-generate"
 DEFAULT_STATS = BASE_DIR / "stats" / "function_stats.json"
@@ -179,8 +179,8 @@ def main() -> None:
     cfg = JobConfig(
         output_dir=args.output_dir,
         stats_path=args.stats,
-        pretty_script=BASE_DIR / "scripts" / "pretty_toucan.py",
-        has_script=BASE_DIR / "scripts" / "build_has_api.py",
+        pretty_script=BASE_DIR / "scripts" / "analysis" / "pretty_toucan.py",
+        has_script=BASE_DIR / "scripts" / "build_has" / "build_has_api.py",
         modes=args.modes,
         negatives=args.negatives,
         seed=args.seed,

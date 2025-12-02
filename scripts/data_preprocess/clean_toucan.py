@@ -3,7 +3,8 @@
 Simple cleaner for Toucan-style jsonl data.
 
 Example:
-    python clean_toucan.py -i data/toucan.jsonl -o data/toucan_clean.jsonl \
+    python scripts/data_preprocess/clean_toucan.py \
+        -i data/toucan.jsonl -o data/toucan_clean.jsonl \
         --min-question-score 3.5 --min-response-score 3.0 --min-tool-usage 0.2
 """
 

@@ -3,7 +3,9 @@
 CLI helper that converts a Parquet file into JSON Lines (jsonl) format.
 
 Example:
-    python generate.py --input data/sample.parquet --output out.jsonl
+    python scripts/data_preprocess/generate_toucan.py \
+        -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
+        -o data/toucan.jsonl
 """
 
 from __future__ import annotations

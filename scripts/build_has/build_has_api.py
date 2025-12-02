@@ -3,7 +3,7 @@
 Generate HAS-API style multiple-choice data without using LLMs.
 
 Example:
-    python scripts/build_has_api.py \
+    python scripts/build_has/build_has_api.py \
         -i data/toucan_1000.jsonl \
         --stats stats/function_meta.json \
         -o data/has_api_random.jsonl \

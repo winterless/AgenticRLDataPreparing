@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Make Toucan jsonl file human readable
+
+Example:
+    python scripts/analysis/pretty_toucan.py -i data/toucan.jsonl -n 1 > data/toucan.txt
+"""
+
 import argparse
 import json
 from pathlib import Path
