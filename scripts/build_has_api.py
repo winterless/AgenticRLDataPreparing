@@ -185,11 +185,101 @@ def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict
     }
 
 
+def _format_arg_values(args: dict) -> str:
+    pairs = []
+    for key in sorted(args.keys()):
+        pairs.append(f"{key}={json.dumps(args[key], ensure_ascii=False)}")
+    return "; ".join(pairs)
+
+
+def _mutate_value(value, prop: dict | None):
+    prop = prop or {}
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, (int, float)):
+        delta = random.choice([-5, -2, -1, 1, 2, 5])
+        candidate = value + delta
+        if candidate != value:
+            return candidate
+    if isinstance(value, str):
+        enums = prop.get("enum")
+        if enums:
+            choices = [e for e in enums if e != value]
+            if choices:
+                return random.choice(choices)
+        # fallback: append suffix or swap case
+        suffixes = ["_alt", "_backup", "_test", "_v2"]
+        suffix = random.choice(suffixes)
+        candidate = value + suffix
+        if candidate != value:
+            return candidate
+    return None
+
+
+def _parse_arguments(fc: dict) -> dict | None:
+    args = fc.get("arguments")
+    if isinstance(args, dict):
+        return args
+    if isinstance(args, str):
+        try:
+            return json.loads(args)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_neg: int) -> dict | None:
+    args = _parse_arguments(fc)
+    if not args:
+        return None
+
+    info = meta.get(func_name, {})
+    params = ((info.get("function") or {}).get("parameters") or info.get("parameters") or {})
+    properties = params.get("properties") or {}
+
+    correct_option = _format_arg_values(args)
+    variations: set[str] = set()
+    attempts = 0
+    max_attempts = num_neg * 5
+
+    while len(variations) < num_neg and attempts < max_attempts:
+        attempts += 1
+        key_candidates = list(args.keys())
+        if not key_candidates:
+            break
+        target = random.choice(key_candidates)
+        mutated_value = _mutate_value(args[target], properties.get(target))
+        if mutated_value is None:
+            continue
+        mutated = dict(args)
+        mutated[target] = mutated_value
+        option = _format_arg_values(mutated)
+        if option != correct_option:
+            variations.add(option)
+
+    if not variations:
+        return None
+
+    options = list(variations)
+    if len(options) > num_neg:
+        options = random.sample(options, num_neg)
+    options.append(correct_option)
+    random.shuffle(options)
+
+    return {
+        "question": f"For the call to {func_name}, which parameter values are correct?",
+        "options": options,
+        "answer": correct_option,
+        "answer_type": "single_choice",
+    }
+
+
 QUESTION_BUILDERS = {
     "random": question_random,
     "cluster": question_cluster,
     "available": question_available,
     "params": question_params,
+    "param_values": question_param_values,
 }
 
 
@@ -235,6 +325,8 @@ def main() -> None:
                     result = builder(func_name, available)
                 elif args.mode == "params":
                     result = builder(func_name, meta, args.negatives)
+                elif args.mode == "param_values":
+                    result = builder(func_name, fc, meta, args.negatives)
                 else:
                     result = None
 

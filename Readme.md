@@ -44,3 +44,45 @@
     - 选项2：从stats/function_stats.json中抽取5个和正确函数聚类函数，与正确函数混在一起，构成选择题（屏蔽可选选项和之前的函数名）
     - 选项3：从原有轨迹候选数据中，列出所有available_tools选项，让模型选择
     - 选项4：在正确函数选项下，从正确函数的参数中挑选
+
+```
+参数值生成思路
+解析真实参数
+对每条 function_call 读取 arguments，若是字符串则 json.loads，得到真实 dict 作为正确答案。
+引用：question_param_values 先 _parse_arguments(fc) 并生成 correct_option。
+  args = _parse_arguments(fc)
+  ...
+  correct_option = _format_arg_values(args)
+针对类型的扰动策略（来自 _mutate_value）
+  if isinstance(value, bool):
+      return not value
+  if isinstance(value, (int, float)):
+      delta = random.choice([-5, -2, -1, 1, 2, 5])
+      return value + delta
+  if isinstance(value, str):
+      enums = prop.get("enum")
+      ...
+      suffix = random.choice(["_alt","_backup","_test","_v2"])
+布尔值：直接取反。
+数值：从 ±1/2/5 中随机加减。
+字符串：优先换成同 enum 中的其他值，否则附加随机后缀。
+其他类型或无法变动时返回 None，会跳过本次尝试。
+形成多套干扰选项
+  while len(variations) < num_neg and attempts < max_attempts:
+      target = random.choice(key_candidates)
+      mutated = dict(args); mutated[target] = mutated_value
+      option = _format_arg_values(mutated)
+      variations.add(option)
+随机挑一个参数键，按上面的策略生成新值。
+与正确答案不同才加入集合，直到凑够 num_neg 或达到尝试上限。
+整题结构
+  options = list(variations)[:num_neg]
+  options.append(correct_option)
+  random.shuffle(options)
+  return {
+      "question": f"For the call to {func_name}, which parameter values are correct?",
+      "answer_type": "single_choice",
+  }
+生成若干扰动选项+1 个正确选项，打乱顺序；题干说明“哪个参数取值正确”。
+整体流程都在 scripts/build_has_api.py 的 question_param_values、_mutate_value、_format_arg_values 中。
+```
