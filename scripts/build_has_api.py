@@ -124,26 +124,64 @@ def question_available(func_name: str, available: list[str]) -> dict | None:
     }
 
 
+def _format_params(params: Iterable[str]) -> str:
+    ordered = sorted(params)
+    if not ordered:
+        return ""
+    if len(ordered) == 1:
+        return ordered[0]
+    return ", ".join(ordered)
+
+
 def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict | None:
     info = meta.get(func_name, {})
     params = ((info.get("function") or {}).get("parameters") or info.get("parameters") or {})
     required = params.get("required") or []
     properties = params.get("properties") or {}
-    if not required:
+    required_set = {p for p in required if p in properties}
+    if not required_set:
         return None
-    correct_param = random.choice(required)
-    # gather other parameter names as negatives
-    candidates = [p for p in properties.keys() if p != correct_param]
-    if not candidates:
-        return None
-    k = min(num_neg, len(candidates))
-    negs = random.sample(candidates, k)
-    options = negs + [correct_param]
+    correct_option = _format_params(required_set)
+
+    other_params = [p for p in properties.keys() if p not in required_set]
+    candidate_sets: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    # combos missing one required param
+    if len(required_set) > 1:
+        for missing in required_set:
+            combo = tuple(sorted(required_set - {missing}))
+            if combo and combo not in seen:
+                seen.add(combo)
+                candidate_sets.append(combo)
+
+    # combos including extra optional params
+    for extra in other_params:
+        combo = tuple(sorted(required_set | {extra}))
+        if combo not in seen:
+            seen.add(combo)
+            candidate_sets.append(combo)
+
+    if not candidate_sets:
+        # fall back to single-parameter distractors if possible
+        for param in properties.keys():
+            combo = (param,)
+            if combo != tuple(sorted(required_set)) and combo not in seen:
+                seen.add(combo)
+                candidate_sets.append(combo)
+        if not candidate_sets:
+            return None
+
+    k = min(num_neg, len(candidate_sets))
+    sampled = random.sample(candidate_sets, k)
+    negs = [_format_params(combo) for combo in sampled]
+    options = negs + [correct_option]
     random.shuffle(options)
     return {
-        "question": f"When calling {func_name}, which parameter is required?",
+        "question": f"When calling {func_name}, which parameters must be provided? (Select all that apply)",
         "options": options,
-        "answer": correct_param,
+        "answer": correct_option,
+        "answer_type": "multi_select",
     }
 
 
