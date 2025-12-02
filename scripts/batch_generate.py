@@ -47,14 +47,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--modes",
         nargs="+",
-        default=["random", "cluster", "available", "params", "param_values"],
+        default=["random", "available", "params", "param_values"],
         help="HAS-API modes to run for each jsonl file.",
     )
     parser.add_argument(
         "--negatives",
         type=int,
         default=5,
-        help="Desired number of negative options for random/cluster/params modes.",
+        help="Desired number of negative options for random/params modes.",
     )
     parser.add_argument(
         "--seed",

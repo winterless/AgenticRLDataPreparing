@@ -36,19 +36,6 @@ def load_meta(stats_path: Path) -> dict[str, dict]:
         return json.load(fh)
 
 
-def split_prefix(name: str, levels: int = 2) -> str:
-    parts = name.split("-")
-    return "-".join(parts[:levels]) if len(parts) >= levels else name
-
-
-def build_cluster_map(functions: Iterable[str]) -> dict[str, list[str]]:
-    clusters: dict[str, list[str]] = {}
-    for name in functions:
-        prefix = split_prefix(name)
-        clusters.setdefault(prefix, []).append(name)
-    return clusters
-
-
 def parse_available_tools(record: dict) -> list[str]:
     tools = record.get("available_tools")
     if tools is None:
@@ -91,22 +78,6 @@ def question_random(func_name: str, all_funcs: list[str], num_neg: int) -> dict 
     random.shuffle(options)
     return {
         "question": "Which tool should the agent call next?",
-        "options": options,
-        "answer": func_name,
-    }
-
-
-def question_cluster(func_name: str, clusters: dict[str, list[str]], num_neg: int) -> dict | None:
-    prefix = split_prefix(func_name)
-    candidates = [f for f in clusters.get(prefix, []) if f != func_name]
-    if not candidates:
-        return None
-    k = min(num_neg, len(candidates))
-    negs = random.sample(candidates, k)
-    options = negs + [func_name]
-    random.shuffle(options)
-    return {
-        "question": f"Among similar APIs ({prefix}), which tool should be called?",
         "options": options,
         "answer": func_name,
     }
@@ -196,7 +167,13 @@ def _mutate_value(value, prop: dict | None):
     prop = prop or {}
     if isinstance(value, bool):
         return not value
-    if isinstance(value, (int, float)):
+    if isinstance(value, float):
+        float_deltas = [-2.0, -1.0, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5, 1.0, 2.0]
+        delta = random.choice(float_deltas)
+        candidate = value + delta
+        if candidate != value:
+            return round(candidate, 6)
+    if isinstance(value, int):
         delta = random.choice([-5, -2, -1, 1, 2, 5])
         candidate = value + delta
         if candidate != value:
@@ -276,7 +253,6 @@ def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_n
 
 QUESTION_BUILDERS = {
     "random": question_random,
-    "cluster": question_cluster,
     "available": question_available,
     "params": question_params,
     "param_values": question_param_values,
@@ -306,8 +282,6 @@ def main() -> None:
 
     meta = load_meta(args.stats)
     all_functions = list(meta.keys())
-    cluster_map = build_cluster_map(all_functions)
-
     builder = QUESTION_BUILDERS[args.mode]
     produced = 0
 
@@ -319,8 +293,6 @@ def main() -> None:
                 func_name = fc["name"]
                 if args.mode == "random":
                     result = builder(func_name, all_functions, args.negatives)
-                elif args.mode == "cluster":
-                    result = builder(func_name, cluster_map, args.negatives)
                 elif args.mode == "available":
                     result = builder(func_name, available)
                 elif args.mode == "params":
