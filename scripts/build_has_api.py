@@ -15,8 +15,16 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 from typing import Iterable
+
+
+if hasattr(sys, "set_int_max_str_digits"):
+    try:
+        sys.set_int_max_str_digits(0)  # disable limit for large JSON ints
+    except Exception:
+        pass
 
 
 def load_jsonl(path: Path) -> Iterable[dict]:
@@ -199,7 +207,10 @@ def _parse_arguments(fc: dict) -> dict | None:
         return args
     if isinstance(args, str):
         try:
-            return json.loads(args)
+            parsed = json.loads(args)
+            if isinstance(parsed, dict):
+                return parsed
+            return None
         except json.JSONDecodeError:
             return None
     return None

@@ -85,6 +85,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Copy each source jsonl into the output directory for reference.",
     )
+    parser.add_argument(
+        "--pretty-records",
+        type=int,
+        default=0,
+        help="Pretty-print at most N records per file (0 disables pretty output).",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +105,7 @@ class JobConfig:
     seed: int
     copy_input: bool
     max_samples: int | None
+    pretty_records: int
 
 
 def run_command(cmd: list[str], log_prefix: str, stdout=None) -> None:
@@ -117,13 +124,13 @@ def process_file(jsonl_path: Path, rel_path: Path, cfg: JobConfig) -> tuple[str,
             dest_jsonl = dest_dir / jsonl_path.name
             shutil.copy2(jsonl_path, dest_jsonl)
 
-        pretty_output = dest_dir / f"{jsonl_path.stem}.txt"
-        with pretty_output.open("w", encoding="utf-8") as pretty_f:
-            run_command(
-                [sys.executable, str(cfg.pretty_script), "-i", str(jsonl_path)],
-                log_prefix,
-                stdout=pretty_f,
-            )
+        if cfg.pretty_records != 0:
+            pretty_output = dest_dir / f"{jsonl_path.stem}.txt"
+            cmd = [sys.executable, str(cfg.pretty_script), "-i", str(jsonl_path)]
+            if cfg.pretty_records > 0:
+                cmd.extend(["-n", str(cfg.pretty_records)])
+            with pretty_output.open("w", encoding="utf-8") as pretty_f:
+                run_command(cmd, log_prefix, stdout=pretty_f)
 
         for mode in cfg.modes:
             api_output = dest_dir / f"{jsonl_path.stem}_api_{mode}.jsonl"
@@ -179,6 +186,7 @@ def main() -> None:
         seed=args.seed,
         copy_input=args.copy_input,
         max_samples=args.max_samples,
+        pretty_records=args.pretty_records,
     )
 
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
