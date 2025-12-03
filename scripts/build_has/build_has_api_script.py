@@ -3,7 +3,7 @@
 Generate HAS-API style multiple-choice data without using LLMs.
 
 Example:
-    python scripts/build_has/build_has_api.py \
+    python scripts/build_has/build_has_api_script.py \
         -i data/toucan_1000.jsonl \
         --stats stats/function_meta.json \
         -o data/has_api_random.jsonl \
@@ -19,29 +19,20 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from utils import (
+    format_arg_values,
+    iter_function_calls,
+    load_jsonl,
+    load_meta,
+    parse_arguments,
+)
+
 
 if hasattr(sys, "set_int_max_str_digits"):
     try:
         sys.set_int_max_str_digits(0)  # disable limit for large JSON ints
     except Exception:
         pass
-
-
-def load_jsonl(path: Path) -> Iterable[dict]:
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-
-def load_meta(stats_path: Path) -> dict[str, dict]:
-    with stats_path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
 
 
 def parse_available_tools(record: dict) -> list[str]:
@@ -59,21 +50,6 @@ def parse_available_tools(record: dict) -> list[str]:
         if func.get("name"):
             names.append(func["name"])
     return names
-
-
-def iter_function_calls(record: dict):
-    messages = record.get("messages")
-    if isinstance(messages, str):
-        try:
-            messages = json.loads(messages)
-        except json.JSONDecodeError:
-            return
-    if not isinstance(messages, list):
-        return
-    for idx, msg in enumerate(messages):
-        fc = msg.get("function_call")
-        if fc and fc.get("name"):
-            yield idx, fc
 
 
 def question_random(func_name: str, all_funcs: list[str], num_neg: int) -> dict | None:
@@ -164,13 +140,6 @@ def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict
     }
 
 
-def _format_arg_values(args: dict) -> str:
-    pairs = []
-    for key in sorted(args.keys()):
-        pairs.append(f"{key}={json.dumps(args[key], ensure_ascii=False)}")
-    return "; ".join(pairs)
-
-
 def _mutate_value(value, prop: dict | None):
     prop = prop or {}
     if isinstance(value, bool):
@@ -201,23 +170,8 @@ def _mutate_value(value, prop: dict | None):
     return None
 
 
-def _parse_arguments(fc: dict) -> dict | None:
-    args = fc.get("arguments")
-    if isinstance(args, dict):
-        return args
-    if isinstance(args, str):
-        try:
-            parsed = json.loads(args)
-            if isinstance(parsed, dict):
-                return parsed
-            return None
-        except json.JSONDecodeError:
-            return None
-    return None
-
-
 def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_neg: int) -> dict | None:
-    args = _parse_arguments(fc)
+    args = parse_arguments(fc)
     if not args:
         return None
 
@@ -225,7 +179,7 @@ def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_n
     params = ((info.get("function") or {}).get("parameters") or info.get("parameters") or {})
     properties = params.get("properties") or {}
 
-    correct_option = _format_arg_values(args)
+    correct_option = format_arg_values(args)
     variations: set[str] = set()
     attempts = 0
     max_attempts = num_neg * 5
@@ -241,7 +195,7 @@ def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_n
             continue
         mutated = dict(args)
         mutated[target] = mutated_value
-        option = _format_arg_values(mutated)
+        option = format_arg_values(mutated)
         if option != correct_option:
             variations.add(option)
 

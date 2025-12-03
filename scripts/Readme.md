@@ -2,7 +2,7 @@
 
 - `data_preprocess/`: parquet ➜ jsonl conversion and cleaning (`generate_toucan.py`, `clean_toucan.py`)
 - `analysis/`: readability tools & statistics (`pretty_toucan.py`, `function_stats.py`)
-- `build_has/`: HAS generation + orchestration (`build_has_api.py`, `batch_generate.py`)
+- `build_has/`: HAS generation + orchestration (`build_has_api_script.py`, `batch_generate.py`)
 
 ```
 # generate jsonl file
@@ -15,7 +15,11 @@ python scripts/analysis/pretty_toucan.py -i data/toucan.jsonl -n 1 > data/toucan
 # summarize function usage
 python scripts/analysis/function_stats.py -i Toucan-1.5M/Toucan-1.5M -o stats/function_stats.csv --meta-output stats/function_stats.json --workers 32
 # generate api options (random/available/params/param_values)
-python scripts/build_has/build_has_api.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_api_random.jsonl --mode param_values --negatives 5 --max-samples 200
+python scripts/build_has/build_has_api_script.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_api_random.jsonl --mode param_values --negatives 5 --max-samples 200
 # batch generate options
 python scripts/build_has/batch_generate.py -i Toucan-1.5M/Toucan-1.5M -o data/Toucan-1.5M-generate -s stats/function_stats.json --workers 8
+# batch generate prompt-based param_values (串行执行)
+python scripts/build_has/batch_generate.py -i Toucan-1.5M/Toucan-1.5M -o data/has_prompt_batch -s stats/function_stats.json --prompt-mode --prompt-limit 10 --prompt-temperature 0.4 --prompt-max-tokens 512
+# prompt-based question_param_values (Toucan-driven)
+python scripts/build_has/build_has_api_prompt.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_prompt_toucan.jsonl --limit 200 --temperature 0.4 --max-tokens 512
 ```

@@ -85,5 +85,5 @@
       "answer_type": "single_choice",
   }
 生成若干扰动选项+1 个正确选项，打乱顺序；题干说明“哪个参数取值正确”。
-整体流程都在 scripts/build_has/build_has_api.py 的 question_param_values、_mutate_value、_format_arg_values 中。
+整体流程都在 scripts/build_has/build_has_api_script.py 的 question_param_values、_mutate_value、_format_arg_values 中。
 ```
