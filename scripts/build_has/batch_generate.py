@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = BASE_DIR / "Toucan-1.5M" / "Toucan-1.5M"
 DEFAULT_OUTPUT = BASE_DIR / "data" / "Toucan-1.5M-generate"
 DEFAULT_STATS = BASE_DIR / "stats" / "function_stats.json"
+DEFAULT_PARAM_POOL = BASE_DIR / "stats" / "param_pool.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Forwarded to build_has_api_script.py to cap HAS-API outputs per file.",
+    )
+    parser.add_argument(
+        "--param-pool",
+        type=Path,
+        default=DEFAULT_PARAM_POOL,
+        help=f"Parameter pool JSON for param_values mode (default: {DEFAULT_PARAM_POOL}).",
     )
     parser.add_argument(
         "--copy-input",
@@ -148,6 +155,7 @@ class JobConfig:
     max_samples: int | None
     pretty_records: int
     prompt_mode: bool
+    param_pool: Path | None
     prompt_script: Path
     prompt_limit: int | None
     prompt_temperature: float
@@ -229,6 +237,8 @@ def process_file(jsonl_path: Path, rel_path: Path, cfg: JobConfig) -> tuple[str,
                     "--seed",
                     str(cfg.seed),
                 ]
+                if mode == "param_values" and cfg.param_pool:
+                    cmd.extend(["--param-pool", str(cfg.param_pool)])
                 if cfg.max_samples:
                     cmd.extend(["--max-samples", str(cfg.max_samples)])
                 run_command(cmd, log_prefix)
@@ -247,6 +257,12 @@ def main() -> None:
         raise SystemExit(f"Input directory not found: {args.input_dir}")
     if not args.stats.exists():
         raise SystemExit(f"Stats file not found: {args.stats}")
+    if (not args.prompt_mode) and ("param_values" in args.modes):
+        if not args.param_pool.exists():
+            raise SystemExit(
+                f"Param pool file not found: {args.param_pool}. "
+                "Run scripts/data_preprocess/build_param_pool.py first or pass --param-pool."
+            )
 
     jsonl_files = sorted(args.input_dir.rglob("*.jsonl"))
     if not jsonl_files:
@@ -272,6 +288,7 @@ def main() -> None:
         max_samples=args.max_samples,
         pretty_records=args.pretty_records,
         prompt_mode=args.prompt_mode,
+        param_pool=args.param_pool if not args.prompt_mode else None,
         prompt_script=BASE_DIR / "scripts" / "build_has" / "build_has_api_prompt.py",
         prompt_limit=args.prompt_limit,
         prompt_temperature=args.prompt_temperature,

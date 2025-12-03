@@ -140,50 +140,59 @@ def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict
     }
 
 
-def _mutate_value(value, prop: dict | None):
-    prop = prop or {}
-    if isinstance(value, bool):
-        return not value
-    if isinstance(value, float):
-        float_deltas = [-2.0, -1.0, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5, 1.0, 2.0]
-        delta = random.choice(float_deltas)
-        candidate = value + delta
-        if candidate != value:
-            return round(candidate, 6)
-    if isinstance(value, int):
-        delta = random.choice([-5, -2, -1, 1, 2, 5])
-        candidate = value + delta
-        if candidate != value:
-            return candidate
-    if isinstance(value, str):
-        enums = prop.get("enum")
-        if enums:
-            choices = [e for e in enums if e != value]
-            if choices:
-                return random.choice(choices)
-        # fallback: append suffix or swap case
-        suffixes = ["_alt", "_backup", "_test", "_v2"]
-        suffix = random.choice(suffixes)
-        candidate = value + suffix
-        if candidate != value:
-            return candidate
-    return None
+class ParamPool:
+    """Helper to sample realistic parameter values from a pre-built pool."""
 
+    def __init__(self, data: dict | None):
+        data = data or {}
+        self.functions = data.get("functions") or {}
+        self.params = data.get("params") or {}
+        self.types = data.get("types") or {}
 
-def _mutate_arguments(args: dict, properties: dict, max_fields: int = 2) -> dict | None:
-    """Return a copy of args with up to max_fields mutated."""
-    if not args:
+    @property
+    def enabled(self) -> bool:
+        return bool(self.functions or self.params or self.types)
+
+    def sample(self, func_name: str, param_name: str, param_type: str | None, original):
+        """Return a value different from original by cascading scopes (func -> param -> type)."""
+        candidates: list = []
+        func_entry = (self.functions.get(func_name) or {}).get("params", {}).get(param_name)
+        self._extend_values(func_entry, candidates)
+        self._extend_values(self.params.get(param_name), candidates)
+        if param_type:
+            self._extend_values(self.types.get(param_type), candidates)
+        if not candidates:
+            return None
+        random.shuffle(candidates)
+        original_key = json.dumps(original, ensure_ascii=False, sort_keys=True)
+        for value in candidates:
+            value_key = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            if value_key != original_key:
+                return value
         return None
-    mutated = dict(args)
-    fields = list(args.keys())
-    k = min(len(fields), max(1, random.randint(1, max_fields)))
-    changed = False
-    for field in random.sample(fields, k):
-        new_value = _mutate_value(mutated[field], properties.get(field))
-        if new_value is not None and new_value != mutated[field]:
-            mutated[field] = new_value
-            changed = True
-    return mutated if changed else None
+
+    @staticmethod
+    def _extend_values(entry: dict | None, dst: list):
+        if not entry:
+            return
+        for cluster in (entry.get("clusters") or {}).values():
+            values = cluster.get("values") or []
+            dst.extend(values)
+
+
+def load_param_pool(path: Path | None) -> ParamPool:
+    if not path:
+        return ParamPool(None)
+    if not path.exists():
+        print(f"[WARN] Param pool file not found: {path}", file=sys.stderr)
+        return ParamPool(None)
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except json.JSONDecodeError as exc:
+        print(f"[WARN] Failed to parse param pool JSON: {exc}", file=sys.stderr)
+        return ParamPool(None)
+    return ParamPool(data)
 
 
 def _drop_argument(args: dict, candidate_fields: list[str]) -> dict | None:
@@ -198,9 +207,67 @@ def _drop_argument(args: dict, candidate_fields: list[str]) -> dict | None:
     return mutated
 
 
-def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_neg: int) -> dict | None:
+def _infer_param_type(schema: dict | None, value) -> str | None:
+    schema = schema or {}
+    p_type = schema.get("type")
+    if isinstance(p_type, list):
+        chosen = None
+        for candidate in p_type:
+            if isinstance(candidate, str) and candidate != "null":
+                chosen = candidate
+                break
+        if chosen is None and p_type:
+            chosen = p_type[0]
+        p_type = chosen
+    if p_type and not isinstance(p_type, str):
+        p_type = None
+    if p_type:
+        return p_type
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return None
+
+
+def _mutate_with_pool(func_name: str, args: dict, properties: dict, pool: ParamPool) -> dict | None:
+    if not pool or not pool.enabled or not args:
+        return None
+    mutated = dict(args)
+    fields = list(args.keys())
+    max_fields = min(2, len(fields))
+    k = random.randint(1, max_fields)
+    changed = False
+    for field in random.sample(fields, k):
+        prop = properties.get(field) or {}
+        schema_type = _infer_param_type(prop, args[field])
+        replacement = pool.sample(func_name, field, schema_type, args[field])
+        if replacement is None:
+            continue
+        mutated[field] = replacement
+        changed = True
+    return mutated if changed else None
+
+
+def question_param_values(
+    func_name: str,
+    fc: dict,
+    meta: dict[str, dict],
+    num_neg: int,
+    pool: ParamPool | None = None,
+) -> dict | None:
     args = parse_arguments(fc)
     if not args:
+        return None
+    if not pool or not pool.enabled:
         return None
 
     info = meta.get(func_name, {})
@@ -215,11 +282,10 @@ def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_n
 
     while len(variations) < num_neg and attempts < max_attempts:
         attempts += 1
-        strategy = random.choice(
-            ["mutate", "mutate", "drop_required", "drop_any"]
-        )
-        if strategy == "mutate":
-            mutated = _mutate_arguments(args, properties)
+        strategies = ["pool", "pool", "drop_required", "drop_any"]
+        strategy = random.choice(strategies)
+        if strategy == "pool":
+            mutated = _mutate_with_pool(func_name, args, properties, pool)
         elif strategy == "drop_required" and required_fields:
             mutated = _drop_argument(args, required_fields)
         elif strategy == "drop_any":
@@ -271,6 +337,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--negatives", type=int, default=5, help="Number of negative options.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--max-samples", type=int, default=None, help="Optional limit on outputs.")
+    parser.add_argument(
+        "--param-pool",
+        type=Path,
+        default=Path("stats/param_pool.json"),
+        help="Parameter pool JSON produced by build_param_pool.py (param_values mode).",
+    )
     return parser.parse_args()
 
 
@@ -282,6 +354,7 @@ def main() -> None:
     all_functions = list(meta.keys())
     builder = QUESTION_BUILDERS[args.mode]
     produced = 0
+    param_pool = load_param_pool(args.param_pool) if args.mode == "param_values" else ParamPool(None)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as sink:
@@ -296,7 +369,7 @@ def main() -> None:
                 elif args.mode == "params":
                     result = builder(func_name, meta, args.negatives)
                 elif args.mode == "param_values":
-                    result = builder(func_name, fc, meta, args.negatives)
+                    result = builder(func_name, fc, meta, args.negatives, param_pool)
                 else:
                     result = None
 

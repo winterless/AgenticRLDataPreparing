@@ -184,6 +184,7 @@ def list_available_models(client: OpenAI) -> list[str]:
 
 def toucan_tasks(input_path: Path, meta: dict[str, dict], limit: int | None) -> Iterable[GenerationTask]:
     """遍历 Toucan jsonl，抽取函数调用上下文，包装成 GenerationTask。"""
+    # 这块感觉实际上并没有抽取太多上下文，我后面会拿json文件和原文去拼接训练
     produced = 0
     for record in load_jsonl(input_path):
         record_uuid = record.get("uuid")
@@ -215,6 +216,7 @@ def toucan_tasks(input_path: Path, meta: dict[str, dict], limit: int | None) -> 
 
 def build_prompt(task: GenerationTask, limits: PromptLimits) -> str:
     """根据任务信息构建提示词，包含 schema/参数/上下文摘要。"""
+    # 为啥要有两个build_prompt函数
     schema_text = summarize_schema(task.schema, limits.schema_chars)
     args_text = truncate_text(json.dumps(task.arguments, ensure_ascii=False, indent=2), limits.args_chars)
     canonical = format_arg_values(task.arguments)
