@@ -170,6 +170,34 @@ def _mutate_value(value, prop: dict | None):
     return None
 
 
+def _mutate_arguments(args: dict, properties: dict, max_fields: int = 2) -> dict | None:
+    """Return a copy of args with up to max_fields mutated."""
+    if not args:
+        return None
+    mutated = dict(args)
+    fields = list(args.keys())
+    k = min(len(fields), max(1, random.randint(1, max_fields)))
+    changed = False
+    for field in random.sample(fields, k):
+        new_value = _mutate_value(mutated[field], properties.get(field))
+        if new_value is not None and new_value != mutated[field]:
+            mutated[field] = new_value
+            changed = True
+    return mutated if changed else None
+
+
+def _drop_argument(args: dict, candidate_fields: list[str]) -> dict | None:
+    """Return a copy missing one of the candidate fields."""
+    if not args or not candidate_fields:
+        return None
+    field = random.choice(candidate_fields)
+    mutated = dict(args)
+    mutated.pop(field, None)
+    if mutated == args or not mutated:
+        return None
+    return mutated
+
+
 def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_neg: int) -> dict | None:
     args = parse_arguments(fc)
     if not args:
@@ -182,21 +210,26 @@ def question_param_values(func_name: str, fc: dict, meta: dict[str, dict], num_n
     correct_option = format_arg_values(args)
     variations: set[str] = set()
     attempts = 0
-    max_attempts = num_neg * 5
+    max_attempts = num_neg * 8
+    required_fields = [p for p in params.get("required") or [] if p in args]
 
     while len(variations) < num_neg and attempts < max_attempts:
         attempts += 1
-        key_candidates = list(args.keys())
-        if not key_candidates:
-            break
-        target = random.choice(key_candidates)
-        mutated_value = _mutate_value(args[target], properties.get(target))
-        if mutated_value is None:
+        strategy = random.choice(
+            ["mutate", "mutate", "drop_required", "drop_any"]
+        )
+        if strategy == "mutate":
+            mutated = _mutate_arguments(args, properties)
+        elif strategy == "drop_required" and required_fields:
+            mutated = _drop_argument(args, required_fields)
+        elif strategy == "drop_any":
+            mutated = _drop_argument(args, list(args.keys()))
+        else:
+            mutated = None
+        if not mutated:
             continue
-        mutated = dict(args)
-        mutated[target] = mutated_value
         option = format_arg_values(mutated)
-        if option != correct_option:
+        if option and option != correct_option:
             variations.add(option)
 
     if not variations:
