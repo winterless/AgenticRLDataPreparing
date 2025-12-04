@@ -47,7 +47,7 @@ used the correct parameter values. Always respond with valid JSON.
 """
 
 
-def calc_sign(payload: dict) -> tuple[int, str]:
+def calc_sign(data, sign_key, query_param, path, method, app_id) -> tuple[int, str]:
     """为 data 构造签名字符串，预留鉴权逻辑（当前返回空签名）。"""
     # 为data构造签名字符串
     timestamp = int(time.time())
@@ -251,11 +251,13 @@ def extract_json_block(text: str) -> str | None:
     return None
 
 
-def call_llm(client: OpenAI, model: str, prompt: str, temperature: float, max_tokens: int) -> str:
+def call_llm(client: OpenAI, model: str, prompt: str, temperature: float, max_tokens: int, url="", data="") -> str:
+    if url:
+        calc_sign()
+        return
     """统一的 LLM 调用入口，附带签名占位与系统提示设置。"""
     # 构造请求参数
     # 生成签名
-    calc_sign({"prompt": prompt})
     # 构造请求头
     # 发送请求并获得响应
     # 处理响应数据
