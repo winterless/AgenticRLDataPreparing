@@ -20,6 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPTS_ROOT = SCRIPT_DIR.parent
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.append(str(SCRIPTS_ROOT))
+
 try:
     _openai = importlib.import_module("openai")
 except ImportError as exc:  # pragma: no cover - dependency guard
@@ -28,7 +33,7 @@ except ImportError as exc:  # pragma: no cover - dependency guard
 OpenAI = _openai.OpenAI
 OpenAIError = _openai.OpenAIError
 
-from utils import (
+from utils.has_utils import (
     format_arg_values,
     iter_function_calls,
     load_jsonl,

@@ -20,8 +20,14 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-from utils import (
+SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPTS_ROOT = SCRIPT_DIR.parent
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.append(str(SCRIPTS_ROOT))
+
+from utils.has_utils import (
     format_arg_values,
+    infer_param_type,
     iter_function_calls,
     load_jsonl,
     load_meta,
@@ -341,37 +347,6 @@ def _drop_argument(args: dict, candidate_fields: list[str]) -> dict | None:
     return mutated
 
 
-def _infer_param_type(schema: dict | None, value) -> str | None:
-    schema = schema or {}
-    p_type = schema.get("type")
-    if isinstance(p_type, list):
-        chosen = None
-        for candidate in p_type:
-            if isinstance(candidate, str) and candidate != "null":
-                chosen = candidate
-                break
-        if chosen is None and p_type:
-            chosen = p_type[0]
-        p_type = chosen
-    if p_type and not isinstance(p_type, str):
-        p_type = None
-    if p_type:
-        return p_type
-    if isinstance(value, bool):
-        return "boolean"
-    if isinstance(value, int) and not isinstance(value, bool):
-        return "integer"
-    if isinstance(value, float):
-        return "number"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, list):
-        return "array"
-    if isinstance(value, dict):
-        return "object"
-    return None
-
-
 def _mutate_with_pool(func_name: str, args: dict, properties: dict, pool: ParamPool) -> dict | None:
     if not pool or not pool.enabled or not args:
         return None
@@ -382,7 +357,7 @@ def _mutate_with_pool(func_name: str, args: dict, properties: dict, pool: ParamP
     changed = False
     for field in random.sample(fields, k):
         prop = properties.get(field) or {}
-        schema_type = _infer_param_type(prop, args[field])
+        schema_type = infer_param_type(prop, args[field])
         replacement = pool.sample(func_name, field, schema_type, args[field])
         if replacement is None:
             continue

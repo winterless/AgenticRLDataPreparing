@@ -34,7 +34,13 @@ SCRIPTS_ROOT = SCRIPT_DIR.parent
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.append(str(SCRIPTS_ROOT))
 
-from build_has.utils import iter_function_calls, load_jsonl, load_meta, parse_arguments
+from utils.has_utils import (
+    infer_param_type,
+    iter_function_calls,
+    load_jsonl,
+    load_meta,
+    parse_arguments,
+)
 
 
 WORKER_META: dict | None = None
@@ -116,35 +122,6 @@ def discover_files(path: Path) -> list[Path]:
     if not path.exists():
         return []
     return sorted(p for p in path.rglob("*.jsonl") if p.is_file())
-
-
-def infer_param_type(schema: dict | None, value) -> str:
-    schema = schema or {}
-    declared = schema.get("type")
-    if isinstance(declared, list):
-        for candidate in declared:
-            if isinstance(candidate, str) and candidate != "null":
-                declared = candidate
-                break
-        if isinstance(declared, list):
-            declared = declared[0] if declared else None
-    if declared is not None and not isinstance(declared, str):
-        declared = None
-    if declared:
-        return declared
-    if isinstance(value, bool):
-        return "boolean"
-    if isinstance(value, int) and not isinstance(value, bool):
-        return "integer"
-    if isinstance(value, float):
-        return "number"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, list):
-        return "array"
-    if isinstance(value, dict):
-        return "object"
-    return "unknown"
 
 
 def classify_string(value: str) -> str:
@@ -282,7 +259,7 @@ class PoolBuilder:
 
         for param_name, value in arguments.items():
             schema = properties.get(param_name) or {}
-            p_type = infer_param_type(schema, value)
+            p_type = infer_param_type(schema, value, default="unknown")
             cluster = cluster_label(p_type, value, schema)
 
             func_entry = ensure_func_param_entry(
