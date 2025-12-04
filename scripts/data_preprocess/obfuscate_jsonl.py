@@ -4,8 +4,8 @@ Rewrite jsonl data so that all function names are replaced by aliases.
 
 Example:
     python scripts/data_preprocess/obfuscate_jsonl.py \
-        -i data/toucan2.jsonl \
-        -o data/toucan2_obf.jsonl \
+        -i data/toucan2_raw.jsonl \
+        -o data/toucan2.jsonl \
         --alias stats/function_alias.json
 """
 
@@ -88,6 +88,9 @@ def mask_messages(record: dict, alias_map: dict[str, str]) -> None:
     messages, was_string = parse_json_field(raw_messages)
     if isinstance(messages, list):
         for msg in messages:
+            role = msg.get("role")
+            if role in {"function", "tool"} and msg.get("name"):
+                msg["name"] = apply_alias(msg["name"], alias_map)
             if msg.get("role") == "system" and isinstance(msg.get("content"), str):
                 msg["content"] = obfuscate_tool_declare(msg["content"], alias_map)
             fc = msg.get("function_call")
