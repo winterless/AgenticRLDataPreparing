@@ -143,41 +143,60 @@ def question_params(func_name: str, meta: dict[str, dict], num_neg: int) -> dict
 class ParamPool:
     """Helper to sample realistic parameter values from a pre-built pool."""
 
-    def __init__(self, data: dict | None):
+    def __init__(self, data: dict | None, global_mix_prob: float = 0.1):
         data = data or {}
         self.functions = data.get("functions") or {}
         self.params = data.get("params") or {}
         self.types = data.get("types") or {}
+        self.global_mix_prob = min(max(global_mix_prob, 0.0), 1.0)
 
     @property
     def enabled(self) -> bool:
         return bool(self.functions or self.params or self.types)
 
     def sample(self, func_name: str, param_name: str, param_type: str | None, original):
-        """Return a value different from original by cascading scopes (func -> param -> type)."""
-        candidates: list = []
+        """Return a value different from original, prioritizing same function/parameter history."""
         func_entry = (self.functions.get(func_name) or {}).get("params", {}).get(param_name)
-        self._extend_values(func_entry, candidates)
-        self._extend_values(self.params.get(param_name), candidates)
-        if param_type:
-            self._extend_values(self.types.get(param_type), candidates)
-        if not candidates:
-            return None
-        random.shuffle(candidates)
-        original_key = json.dumps(original, ensure_ascii=False, sort_keys=True)
-        for value in candidates:
-            value_key = json.dumps(value, ensure_ascii=False, sort_keys=True)
-            if value_key != original_key:
-                return value
+        param_entry = self.params.get(param_name)
+        type_entry = self.types.get(param_type) if param_type else None
+
+        prefer_global = random.random() < self.global_mix_prob
+        search_order: list[dict | None] = []
+        if not prefer_global:
+            search_order.append(func_entry)
+        search_order.extend([param_entry, type_entry])
+        if prefer_global:
+            search_order.append(func_entry)
+
+        for entry in search_order:
+            candidate = self._pick_alternative(entry, original)
+            if candidate is not None:
+                return candidate
         return None
 
     @staticmethod
-    def _extend_values(entry: dict | None, dst: list):
+    def _canonical(value) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            return str(value)
+
+    def _pick_alternative(self, entry: dict | None, original):
         if not entry:
-            return
-        for cluster in (entry.get("clusters") or {}).values():
+            return None
+        original_key = self._canonical(original)
+        clusters = list((entry.get("clusters") or {}).values())
+        random.shuffle(clusters)
+        for cluster in clusters:
             values = cluster.get("values") or []
-            dst.extend(values)
+            if not values:
+                continue
+            pool = list(values)
+            random.shuffle(pool)
+            for value in pool:
+                if self._canonical(value) != original_key:
+                    return value
+        return None
 
 
 def load_param_pool(path: Path | None) -> ParamPool:
