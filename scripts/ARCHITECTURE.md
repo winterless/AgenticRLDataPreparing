@@ -33,4 +33,44 @@
 
 所有阶段通过 jsonl 与 JSON 元信息衔接，因此换用其它数据集时，只需替换入口的转换/清洗逻辑，题目生成部分可以原封不动复用。
 
+### 5. 训练样本拼装（轨迹 + MCQ）
+
+为了直接喂给模型训练，我们将“原始轨迹 + 派生选择题”合成为一条连续文本样本（不强制 JSON 结构），按照真实对话顺序逐步展开，规则如下：
+
+1. **开头信息**  
+   - 输出 `Question:` 段落（可附 `subset_name` 等轻量标签），紧接着给出用户原始提问。  
+   - `Available tools` 段重命名为 `工具清单：`，直接列出现有工具（保持原始顺序即可），**不再额外插入假工具**，只在需要时去重并压缩描述。
+
+2. **Tool declare 与系统上下文**  
+   - 写出 `System tool declare:`，内容来自原始 `messages` 中的 system/tool_declare 区块。  
+   - 若 `api_random` 生成了新的候选项，只需在 `工具清单`/`tool declare` 中补充对应描述即可（可选），但数量控制在 1~2 个，避免过度拉长样本。
+
+3. **Messages 顺序展开**  
+   - 依次输出 user / assistant / function 消息。  
+   - 当 assistant 准备执行 `function_call` 时，**在公布 call 参数之前**插入全部与该 `message_index` 相关的 MCQ，顺序固定为 `api_random → api_available → api_params → api_param_values`，缺失则跳过。  
+   - 每道题使用简短的结构化提示，例如：
+     ```
+     [MCQ:param_values|function=ipma-weather-data-server-get_weather_forecast|msg=4]
+     问：……
+     选项：A.… B.… C.… D.…
+     ```
+     不在文本中泄露正确答案；答案仅在监督标签侧使用。
+   - 题干/选项出现频率较高时要合并、去重或截断长串，从而保持上下文紧凑。
+
+4. **函数结果与原文答案**  
+   - MCQ 区块结束后，继续写 assistant 的 function_call 参数。  
+   - 输出对应的 `function` 角色结果，并用 `[[原文回答]]`（或等效标签）贴回原始 assistant 解释性文字，确保模型仍能看到完整因果链。
+
+5. **收尾信息**  
+   - 所有 `messages` 播放完毕后，追加 `Target tools:`（逗号分隔）、`Question quality assessment:`、`Response quality assessment:`，保留核心评分与理由，长文本可裁剪。  
+   - 最后补上 `Metadata:`，写入 `prompt_id / mcp_servers / generation_params` 等关键信息，方便追踪来源。
+
+通过该拼装流程，单条样本即可同时提供：
+
+- 原始对话上下文（Question → Tool declare → Messages → Function 回执）；
+- 基于同一调用生成的多套 MCQ（含结构化提示，但无显式答案）；
+- 质量与元数据标签（供训练/评估使用）。
+
+这样既能让模型在真实语境中学习“何时/如何调用工具”，又能在函数调用前后插入多种题型，实现统一训练语料。
+
 
