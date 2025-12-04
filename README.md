@@ -2,7 +2,6 @@
 
 1. **原始数据准备**
    - 使用 `generate_toucan.py` 抽取 parquet → jsonl：  
-     `python scripts/data_preprocess/generate_toucan.py -i Toucan-1.5M/Toucan-1.5M --workers 32`
    - 数据清洗（分类，扩展节点，过滤回话，基于阈值等清洗）：暂未进行
 
 2. **轨迹数据混淆**
@@ -33,14 +32,15 @@
 ---
 
 ## 原始轨迹 ➜ 混淆数据 ➜ HAS-API 题库
-(单文件demo示例详见data/generate.sh)
 
 ### 1. 采样一份可控的原始 jsonl（首次或需要重建时）
 
 ```bash
+# full
 python scripts/data_preprocess/generate_toucan.py \
  -i Toucan-1.5M/Toucan-1.5M --workers 32
 
+# single
 python scripts/data_preprocess/generate_toucan.py \
   -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
   --sample-size 1 \
@@ -51,6 +51,7 @@ python scripts/data_preprocess/generate_toucan.py \
 ### 2. 构建 function_stats + alias map（首次或需要重建时）
 
 ```bash
+# full
 python scripts/analysis/function_stats.py \
   -i Toucan-1.5M/Toucan-1.5M \
   -o stats/function_stats_raw.csv \
@@ -62,12 +63,14 @@ python scripts/analysis/function_stats.py \
 ### 3. 使用 alias map 混淆全量数据（首次或需要重建时）
 
 ```bash
+# full
 python scripts/data_preprocess/obfuscate_jsonl.py \
   -i Toucan-1.5M/Toucan-1.5M \
   -o data/Toucan-1.5M-obf \
   --alias stats/function_alias.json \
   --workers 32
 
+# single
 python scripts/data_preprocess/obfuscate_jsonl.py \
   -i data/toucan_raw.jsonl \
   -o data/toucan.jsonl \
@@ -77,12 +80,14 @@ python scripts/data_preprocess/obfuscate_jsonl.py \
 ### 4. 基于混淆数据重建统计与参数池（首次或需要重建时）
 
 ```bash
+# full
 python scripts/analysis/function_stats.py \
   -i data/Toucan-1.5M-obf \
   -o stats/function_stats.csv \
   --meta-output stats/function_stats.json \
   --workers 32
 
+# full
 python scripts/data_preprocess/build_param_pool.py \
   -i data/Toucan-1.5M-obf \
   -s stats/function_stats.json \
@@ -94,6 +99,7 @@ python scripts/data_preprocess/build_param_pool.py \
 
 ```bash
 # available 模式（整合 random 逻辑、函数名仅输出 alias）
+# signle
 python scripts/build_has/build_has_api_script.py \
   -i data/toucan.jsonl \
   -s stats/function_stats.json \
@@ -102,6 +108,7 @@ python scripts/build_has/build_has_api_script.py \
   --negatives 12
 
 # params 模式（必填参数判断）
+# single
 python scripts/build_has/build_has_api_script.py \
   -i data/toucan.jsonl \
   -s stats/function_stats.json \
@@ -110,6 +117,7 @@ python scripts/build_has/build_has_api_script.py \
   --negatives 5
 
 # param_values 模式（真实参数池 + 干扰项）
+# single
 python scripts/build_has/build_has_api_script.py \
   -i data/toucan.jsonl \
   -s stats/function_stats.json \
@@ -123,6 +131,7 @@ python scripts/build_has/build_has_api_script.py \
 
 ```bash
 # 批量脚本模式（支持 available/params/param_values 并行生成）
+# full
 python scripts/build_has/batch_generate.py \
   -i Toucan-1.5M/Toucan-1.5M \
   -o data/Toucan-1.5M-generate \
@@ -131,6 +140,7 @@ python scripts/build_has/batch_generate.py \
   --param-pool stats/param_pool.json
 
 # 批量 prompt 模式（串行执行，适合小规模产出）
+# online
 python scripts/build_has/batch_generate.py \
   -i Toucan-1.5M/Toucan-1.5M \
   -o data/has_prompt_batch \
@@ -141,6 +151,7 @@ python scripts/build_has/batch_generate.py \
   --prompt-max-tokens 512
 
 # 单文件 prompt 生成（调试 / 小样本）
+# online
 python scripts/build_has/build_has_api_prompt.py \
   -i data/toucan_1000.jsonl \
   -s stats/function_stats.json \
@@ -240,3 +251,21 @@ python scripts/build_has/build_has_api_prompt.py \
 6. 轨迹结束后补 `Target tools:`、`Question quality assessment:`、`Response quality assessment:`、`Metadata:`。
 
 该流程确保模型既能看到完整对话，又能学习多项选择题，不暴露答案。更多细节、字段含义及 concat 规划请参考 `scripts/ARCHITECTURE.md`。
+
+## 测试
+- **测试脚本生成（自动同步 README 标签）**
+  ```
+  # generate tests based on README.md python commands
+  # test
+  python scripts/tests/generate_test_scripts.py
+  ```
+
+- **全量数据构建（不依赖 LLM prompt）**
+  ```
+  ./scripts/tests/full_generate_test.sh
+  ```
+
+- **单文件 Demo 构建（不依赖 LLM prompt）**
+  ```
+  ./scripts/tests/single_generate_test.sh
+  ```
