@@ -3,7 +3,7 @@ Subset: single-turn-original
 Question:
   I need to find the chemical properties (like melting point and solubility) of a compound named "aspirin" and determine which bioassays are associated with it. How can I retrieve this information?
 Available tools:
-  - pubchem-data-access-server-search_compound: 
+  - func_tusolase20 (pubchem-data-access-server-search_compound): 
     Search for compounds by name, CID, or other identifiers.
     
     Args:
@@ -13,7 +13,7 @@ Available tools:
     Returns:
         Dictionary with search results
     
-  - pubchem-data-access-server-get_compound_details: 
+  - func_nunasikedb (pubchem-data-access-server-get_compound_details): 
     Get detailed information about a specific compound by its PubChem CID.
     
     Args:
@@ -22,7 +22,7 @@ Available tools:
     Returns:
         Dictionary with compound details
     
-  - pubchem-data-access-server-get_compound_properties: 
+  - func_ratitite22 (pubchem-data-access-server-get_compound_properties): 
     Get physical and chemical properties of a compound.
     
     Args:
@@ -31,7 +31,7 @@ Available tools:
     Returns:
         Dictionary with compound properties
     
-  - pubchem-data-access-server-search_bioassay: 
+  - func_vomalaki93 (pubchem-data-access-server-search_bioassay): 
     Search for bioassays related to a compound or target.
     
     Args:
@@ -41,7 +41,7 @@ Available tools:
     Returns:
         Dictionary with bioassay search results
     
-  - pubchem-data-access-server-get_substance_details: 
+  - func_masotuloaa (pubchem-data-access-server-get_substance_details): 
     Get detailed information about a specific substance by its PubChem SID.
     
     Args:
@@ -52,7 +52,7 @@ Available tools:
     
 Messages:
   system (tool_declare):
-    [{"type": "function", "function": {"name": "pubchem-data-access-server-search_compound", "description": "
+    [{"type": "function", "function": {"name": "func_tusolase20", "description": "
         Search for compounds by name, CID, or other identifiers.
     
         Args:
@@ -61,7 +61,7 @@ Messages:
         
         Returns:
             Dictionary with search results
-        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 10, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_compound_details", "description": "
+        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 10, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "func_nunasikedb", "description": "
         Get detailed information about a specific compound by its PubChem CID.
     
         Args:
@@ -69,7 +69,7 @@ Messages:
         
         Returns:
             Dictionary with compound details
-        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_compound_properties", "description": "
+        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "func_ratitite22", "description": "
         Get physical and chemical properties of a compound.
     
         Args:
@@ -77,7 +77,7 @@ Messages:
         
         Returns:
             Dictionary with compound properties
-        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-search_bioassay", "description": "
+        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "func_vomalaki93", "description": "
         Search for bioassays related to a compound or target.
     
         Args:
@@ -86,7 +86,7 @@ Messages:
         
         Returns:
             Dictionary with bioassay search results
-        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 5, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_substance_details", "description": "
+        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 5, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "func_masotuloaa", "description": "
         Get detailed information about a specific substance by its PubChem SID.
     
         Args:
@@ -99,7 +99,7 @@ Messages:
     I need to find the chemical properties (like melting point and solubility) of a compound named "aspirin" and determine which bioassays are associated with it. How can I retrieve this information?
   assistant:
     I'll help you find the chemical properties and bioassays associated with aspirin. Let me search for aspirin first to get its PubChem CID, then retrieve the detailed properties and bioassay information.
-  assistant (function_call: pubchem-data-access-server-search_compound):
+  assistant (function_call: func_tusolase20 (pubchem-data-access-server-search_compound)):
     {
       "query": "aspirin"
     }
@@ -119,11 +119,11 @@ Messages:
     }
   assistant:
     Great! I found aspirin with CID 2244. Now let me retrieve its chemical properties and find the bioassays associated with it.
-  assistant (function_call: pubchem-data-access-server-get_compound_properties):
+  assistant (function_call: func_ratitite22 (pubchem-data-access-server-get_compound_properties)):
     {
       "cid": 2244
     }
-  assistant (function_call: pubchem-data-access-server-search_bioassay):
+  assistant (function_call: func_vomalaki93 (pubchem-data-access-server-search_bioassay)):
     {
       "query": "aspirin",
       "max_results": 10
@@ -156,7 +156,7 @@ Messages:
     }
   assistant:
     I successfully retrieved the chemical properties for aspirin, but the bioassay search encountered an error. Let me try a different approach to find the bioassays by searching for them using the CID instead.
-  assistant (function_call: pubchem-data-access-server-search_bioassay):
+  assistant (function_call: func_vomalaki93 (pubchem-data-access-server-search_bioassay)):
     {
       "max_results": 10,
       "query": "2244"
@@ -168,7 +168,7 @@ Messages:
     }
   assistant:
     Let me try to get more detailed compound information which might include bioassay data, and also get additional properties that may contain melting point and solubility information.
-  assistant (function_call: pubchem-data-access-server-get_compound_details):
+  assistant (function_call: func_nunasikedb (pubchem-data-access-server-get_compound_details)):
     {
       "cid": 2244
     }
@@ -929,7 +929,7 @@ Metadata:
     remote_server_response:
       is_success: true
       tools:
-      - name: search_compound
+      - name: func_lanutimu32
         description: "\n    Search for compounds by name, CID, or other identifiers.\n\
           \    \n    Args:\n        query: The search query (compound name, CID, SMILES,\
           \ etc.)\n        max_results: Maximum number of results to return (default:\
@@ -949,7 +949,7 @@ Metadata:
           title: search_compoundArguments
           type: object
         annotations: null
-      - name: get_compound_details
+      - name: func_kisesune9b
         description: "\n    Get detailed information about a specific compound by its\
           \ PubChem CID.\n    \n    Args:\n        cid: PubChem Compound ID (CID)\n\
           \        \n    Returns:\n        Dictionary with compound details\n    "
@@ -963,7 +963,7 @@ Metadata:
           title: get_compound_detailsArguments
           type: object
         annotations: null
-      - name: get_compound_properties
+      - name: func_mesunanu39
         description: "\n    Get physical and chemical properties of a compound.\n  \
           \  \n    Args:\n        cid: PubChem Compound ID (CID)\n        \n    Returns:\n\
           \        Dictionary with compound properties\n    "
@@ -977,7 +977,7 @@ Metadata:
           title: get_compound_propertiesArguments
           type: object
         annotations: null
-      - name: search_bioassay
+      - name: func_morukesu9f
         description: "\n    Search for bioassays related to a compound or target.\n\
           \    \n    Args:\n        query: Search query (compound name, target name,\
           \ etc.)\n        max_results: Maximum number of results to return (default:\
@@ -997,7 +997,7 @@ Metadata:
           title: search_bioassayArguments
           type: object
         annotations: null
-      - name: get_substance_details
+      - name: func_lesukilidd
         description: "\n    Get detailed information about a specific substance by its\
           \ PubChem SID.\n    \n    Args:\n        sid: PubChem Substance ID (SID)\n\
           \        \n    Returns:\n        Dictionary with substance details\n    "

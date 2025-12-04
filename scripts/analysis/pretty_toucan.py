@@ -13,6 +13,32 @@ from textwrap import indent
 
 import yaml
 
+alias_reverse: dict[str, str] | None = None
+
+
+def set_alias_map(path: Path | None):
+    global alias_reverse
+    if not path:
+        alias_reverse = None
+        return
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    with path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError("Alias map must be a JSON object")
+    alias_reverse = {alias: original for original, alias in data.items()}
+
+
+def show_name(name: str | None) -> str:
+    if not name:
+        return "unknown"
+    if alias_reverse and name in alias_reverse:
+        original = alias_reverse[name]
+        if original != name:
+            return f"{name} ({original})"
+    return name
+
 
 def parse_tool_declare(content: str) -> str:
     start_mid = content.find("<|im_middle|>")
@@ -62,7 +88,8 @@ def format_message(entry: dict) -> str:
             args = json.dumps(args_obj, indent=2, ensure_ascii=False)
         except Exception:
             args = fc["arguments"]
-        return f"{role} (function_call: {fc['name']}):\n{indent(args, '  ')}"
+        name = show_name(fc.get("name"))
+        return f"{role} (function_call: {name}):\n{indent(args, '  ')}"
     elif entry.get("content"):
         content = entry["content"].strip()
         if role == "system" and "<|im_system|>" in content:
@@ -91,7 +118,7 @@ def pretty_print_record(record: dict, index: int) -> str:
         if isinstance(tools, list):
             for tool in tools:
                 func = tool.get("function", {})
-                name = func.get("name", "unknown")
+                name = show_name(func.get("name"))
                 desc = func.get("description", "")
                 lines.append(f"  - {name}: {desc}")
         else:
@@ -108,7 +135,12 @@ def pretty_print_record(record: dict, index: int) -> str:
 
     if record.get("target_tools"):
         lines.append("Target tools:")
-        lines.append(indent(str(record["target_tools"]), '  '))
+        targets = record["target_tools"]
+        if isinstance(targets, list):
+            formatted = [show_name(t) for t in targets]
+            lines.append(indent(str(formatted), '  '))
+        else:
+            lines.append(indent(str(targets), '  '))
 
     q_quality = dump_json_like(record.get("question_quality_assessment"))
     if q_quality:
@@ -147,7 +179,15 @@ def main():
         default=None,
         help="Print only the first N records",
     )
+    parser.add_argument(
+        "--alias-map",
+        type=Path,
+        default=None,
+        help="Optional function_alias.json to display raw names alongside aliases.",
+    )
     args = parser.parse_args()
+
+    set_alias_map(args.alias_map)
 
     path = Path(args.input)
     if not path.exists():

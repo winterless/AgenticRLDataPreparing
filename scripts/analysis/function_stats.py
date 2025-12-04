@@ -15,6 +15,18 @@ from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.append(str(REPO_ROOT))
+
+from scripts.utils.function_alias import (
+    build_alias_map,
+    load_alias_map,
+    save_alias_map,
+)
+
 
 def iter_jsonl_files(root: Path) -> list[Path]:
     if root.is_file():
@@ -100,6 +112,18 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of parallel workers for processing files.",
     )
+    parser.add_argument(
+        "--alias-output",
+        type=Path,
+        default=None,
+        help="Optional path to write function_alias.json (built from collected names).",
+    )
+    parser.add_argument(
+        "--alias-existing",
+        type=Path,
+        default=None,
+        help="Optional existing alias map to extend when writing --alias-output.",
+    )
     return parser.parse_args()
 
 
@@ -175,6 +199,19 @@ def main() -> None:
     print(
         f"Unique functions: {len(counter)}. Count CSV: {args.output}. Metadata JSON: {args.meta_output}."
     )
+
+    if args.alias_output:
+        existing = {}
+        if args.alias_existing:
+            try:
+                existing = load_alias_map(args.alias_existing)
+            except FileNotFoundError:
+                print(f"[WARN] Existing alias map not found: {args.alias_existing}")
+            except ValueError as exc:
+                print(f"[WARN] Failed to load existing alias map: {exc}")
+        alias_map = build_alias_map(counter.keys(), existing)
+        save_alias_map(alias_map, args.alias_output)
+        print(f"[INFO] Alias map written to {args.alias_output}")
 
 
 if __name__ == "__main__":
