@@ -40,6 +40,12 @@
 ```bash
 python scripts/data_preprocess/generate_toucan.py \
  -i Toucan-1.5M/Toucan-1.5M --workers 32
+
+python scripts/data_preprocess/generate_toucan.py \
+  -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
+  --sample-size 1 \
+  --seed 23 \
+  -o data/toucan_raw.jsonl
 ```
 
 ### 2. 构建 function_stats + alias map（首次或需要重建时）
@@ -61,6 +67,11 @@ python scripts/data_preprocess/obfuscate_jsonl.py \
   -o data/Toucan-1.5M-obf \
   --alias stats/function_alias.json \
   --workers 32
+
+python scripts/data_preprocess/obfuscate_jsonl.py \
+  -i data/toucan_raw.jsonl \
+  -o data/toucan.jsonl \
+  --alias stats/function_alias.json
 ```
 
 ### 4. 基于混淆数据重建统计与参数池（首次或需要重建时）
