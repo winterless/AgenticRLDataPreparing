@@ -6,8 +6,8 @@ Example:
     python scripts/build_has/build_has_api_script.py \
         -i data/toucan_1000.jsonl \
         --stats stats/function_meta.json \
-        -o data/has_api_random.jsonl \
-        --mode random
+        -o data/has_api_available.jsonl \
+        --mode available
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -52,30 +53,144 @@ def parse_available_tools(record: dict) -> list[str]:
     return names
 
 
-def question_random(func_name: str, all_funcs: list[str], num_neg: int) -> dict | None:
-    pool = [f for f in all_funcs if f != func_name]
+def _function_family(name: str) -> str:
+    """Return a coarse family key based on dashed function name segments."""
+    if not name:
+        return ""
+    parts = name.split("-")
+    if len(parts) >= 3:
+        return "-".join(parts[:3])
+    if len(parts) == 2:
+        return "-".join(parts)
+    # fall back to underscore grouping
+    under = name.split("_")
+    if len(under) >= 2:
+        return "_".join(under[:2])
+    return name
+
+
+def _tokenize(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.lower())) if text else set()
+
+
+def _build_function_profiles(meta: dict[str, dict]) -> dict[str, dict]:
+    profiles: dict[str, dict] = {}
+    for name, info in meta.items():
+        func_block = info.get("function") or {}
+        description = (
+            func_block.get("description")
+            or info.get("description")
+            or "No description provided."
+        )
+        tokens = _tokenize(description) | _tokenize(name.replace("-", " "))
+        profiles[name] = {
+            "family": _function_family(name),
+            "tokens": tokens,
+            "description": description.strip(),
+        }
+    return profiles
+
+
+def _format_option(func_name: str, profiles: dict[str, dict] | None) -> str:
+    return func_name
+
+
+def _select_tool_distractors(
+    func_name: str,
+    all_funcs: list[str],
+    max_count: int,
+    profiles: dict[str, dict] | None = None,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    if max_count <= 0:
+        return []
+    exclude = set(exclude or set())
+    pool = [f for f in all_funcs if f != func_name and f not in exclude]
     if not pool:
+        return []
+
+    profile = (profiles or {}).get(func_name) or {}
+    family_key = profile.get("family") or _function_family(func_name)
+
+    family_pool = [f for f in pool if ((profiles or {}).get(f) or {}).get("family") == family_key]
+    random.shuffle(family_pool)
+    family_target = min(len(family_pool), max(1, int(round(max_count * 0.3))))
+    family_sample = family_pool[:family_target]
+
+    def semantic_score(candidate: str) -> int:
+        cand_profile = (profiles or {}).get(candidate) or {}
+        cand_tokens = cand_profile.get("tokens") or set()
+        target_tokens = profile.get("tokens") or set()
+        return len(target_tokens & cand_tokens)
+
+    remaining_pool = [f for f in pool if f not in family_sample]
+    semantic_candidates = sorted(
+        remaining_pool,
+        key=lambda fn: (semantic_score(fn), fn),
+        reverse=True,
+    )
+    semantic_target = max(0, max_count - len(family_sample) - 1)
+    semantic_sample = semantic_candidates[:semantic_target]
+
+    picked = list(dict.fromkeys(family_sample + semantic_sample))
+    needed = max_count - len(picked)
+    if needed > 0:
+        leftover = [f for f in pool if f not in picked]
+        random.shuffle(leftover)
+        picked.extend(leftover[:needed])
+
+    return picked[:max_count]
+
+
+def question_available(
+    func_name: str,
+    available: list[str],
+    all_funcs: list[str],
+    num_neg: int,
+    profiles: dict[str, dict] | None = None,
+) -> dict | None:
+    if not available:
         return None
-    k = min(num_neg, len(pool))
-    negs = random.sample(pool, k)
-    options = negs + [func_name]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in available:
+        if not isinstance(name, str):
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        deduped.append(name)
+
+    if func_name not in seen:
+        return None
+
+    max_neg = max(1, num_neg)
+    base_negatives = [name for name in deduped if name != func_name]
+    if len(base_negatives) > max_neg:
+        base_negatives = random.sample(base_negatives, max_neg)
+
+    needed = max_neg - len(base_negatives)
+    if needed > 0:
+        exclude = set(deduped)
+        extra = _select_tool_distractors(
+            func_name,
+            all_funcs,
+            needed,
+            profiles=profiles,
+            exclude=exclude,
+        )
+        base_negatives.extend(extra)
+
+    options = [_format_option(name, profiles) for name in base_negatives]
+    correct_option = _format_option(func_name, profiles)
+    options.append(correct_option)
     random.shuffle(options)
-    return {
-        "question": "Which tool should the agent call next?",
-        "options": options,
-        "answer": func_name,
-    }
-
-
-def question_available(func_name: str, available: list[str]) -> dict | None:
-    # use available_tools list as options if includes correct
-    if func_name not in available or len(available) < 2:
+    if len(options) < 2:
         return None
-    options = list(dict.fromkeys(available))  # deduplicate but preserve order
     return {
-        "question": "Select the proper tool from the available tool list.",
+        "question": "Given the available tools (with decoys), which one should the agent call next?",
         "options": options,
-        "answer": func_name,
+        "answer": correct_option,
     }
 
 
@@ -335,7 +450,6 @@ def question_param_values(
 
 
 QUESTION_BUILDERS = {
-    "random": question_random,
     "available": question_available,
     "params": question_params,
     "param_values": question_param_values,
@@ -353,7 +467,12 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Strategy for generating options.",
     )
-    parser.add_argument("--negatives", type=int, default=5, help="Number of negative options.")
+    parser.add_argument(
+        "--negatives",
+        type=int,
+        default=9,
+        help="Number of negative options (up to 9 for available/params modes).",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--max-samples", type=int, default=None, help="Optional limit on outputs.")
     parser.add_argument(
@@ -370,6 +489,7 @@ def main() -> None:
     random.seed(args.seed)
 
     meta = load_meta(args.stats)
+    function_profiles = _build_function_profiles(meta)
     all_functions = list(meta.keys())
     builder = QUESTION_BUILDERS[args.mode]
     produced = 0
@@ -381,10 +501,14 @@ def main() -> None:
             available = parse_available_tools(record)
             for msg_idx, fc in iter_function_calls(record):
                 func_name = fc["name"]
-                if args.mode == "random":
-                    result = builder(func_name, all_functions, args.negatives)
-                elif args.mode == "available":
-                    result = builder(func_name, available)
+                if args.mode == "available":
+                    result = builder(
+                        func_name,
+                        available,
+                        all_functions,
+                        args.negatives,
+                        function_profiles,
+                    )
                 elif args.mode == "params":
                     result = builder(func_name, meta, args.negatives)
                 elif args.mode == "param_values":

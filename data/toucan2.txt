@@ -1,512 +1,921 @@
-=== Record 1 | uuid=1d90e5bc-d631-5da3-8f5f-a00c2d4509cf ===
+=== Record 1 | uuid=4d80c0a2-283a-50cb-a2c9-fc40ea5b1d8a ===
 Subset: single-turn-original
 Question:
-  "I'm planning a 5-day coastal photography trip in Portugal next week and want to shoot during golden hour without getting sunburned. Can you help me find suitable locations (ideally Algarve region seaside towns), check the weather conditions for the next few days, and also make sure to avoid days with extreme UV exposure so I can plan my shooting schedule around both weather and sun safety?"
+  I need to find the chemical properties (like melting point and solubility) of a compound named "aspirin" and determine which bioassays are associated with it. How can I retrieve this information?
 Available tools:
-  - ipma-weather-data-server-get_weather_forecast: Obter previsão meteorológica para uma cidade específica em Portugal
-  - ipma-weather-data-server-get_weather_warnings: Obter avisos meteorológicos ativos em Portugal
-  - ipma-weather-data-server-get_seismic_data: Obter dados sísmicos recentes
-  - ipma-weather-data-server-get_locations: Listar todas as cidades/locais disponíveis para previsão
-  - ipma-weather-data-server-get_weather_stations: Obter dados de observação das estações meteorológicas
-  - ipma-weather-data-server-get_uv_forecast: Obter previsão do índice UV
+  - pubchem-data-access-server-search_compound: 
+    Search for compounds by name, CID, or other identifiers.
+    
+    Args:
+        query: The search query (compound name, CID, SMILES, etc.)
+        max_results: Maximum number of results to return (default: 10)
+        
+    Returns:
+        Dictionary with search results
+    
+  - pubchem-data-access-server-get_compound_details: 
+    Get detailed information about a specific compound by its PubChem CID.
+    
+    Args:
+        cid: PubChem Compound ID (CID)
+        
+    Returns:
+        Dictionary with compound details
+    
+  - pubchem-data-access-server-get_compound_properties: 
+    Get physical and chemical properties of a compound.
+    
+    Args:
+        cid: PubChem Compound ID (CID)
+        
+    Returns:
+        Dictionary with compound properties
+    
+  - pubchem-data-access-server-search_bioassay: 
+    Search for bioassays related to a compound or target.
+    
+    Args:
+        query: Search query (compound name, target name, etc.)
+        max_results: Maximum number of results to return (default: 5)
+        
+    Returns:
+        Dictionary with bioassay search results
+    
+  - pubchem-data-access-server-get_substance_details: 
+    Get detailed information about a specific substance by its PubChem SID.
+    
+    Args:
+        sid: PubChem Substance ID (SID)
+        
+    Returns:
+        Dictionary with substance details
+    
 Messages:
   system (tool_declare):
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_weather_forecast
-        description: Obter previsÃ£o meteorolÃ³gica para uma cidade especÃ­fica em Portugal
-        parameters:
-          type: object
-          properties:
-            city:
-              type: string
-              description: 'Nome da cidade (ex: Lisboa, Porto, Coimbra, Faro, etc.)'
-            days:
-              type: number
-              description: NÃºmero de dias de previsÃ£o (mÃ¡ximo 10)
-              default: 5
-          required:
-          - city
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_weather_warnings
-        description: Obter avisos meteorolÃ³gicos ativos em Portugal
-        parameters:
-          type: object
-          properties: {}
-          required: []
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_seismic_data
-        description: Obter dados sÃ­smicos recentes
-        parameters:
-          type: object
-          properties:
-            area:
-              type: string
-              description: "Ã\x81rea: 'continent', 'azores', 'madeira', ou 'all'"
-              default: all
-          required: []
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_locations
-        description: Listar todas as cidades/locais disponÃ­veis para previsÃ£o
-        parameters:
-          type: object
-          properties: {}
-          required: []
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_weather_stations
-        description: Obter dados de observaÃ§Ã£o das estaÃ§Ãµes meteorolÃ³gicas
-        parameters:
-          type: object
-          properties: {}
-          required: []
-    - type: function
-      function:
-        name: ipma-weather-data-server-get_uv_forecast
-        description: Obter previsÃ£o do Ã­ndice UV
-        parameters:
-          type: object
-          properties: {}
-          required: []
+    [{"type": "function", "function": {"name": "pubchem-data-access-server-search_compound", "description": "
+        Search for compounds by name, CID, or other identifiers.
+    
+        Args:
+            query: The search query (compound name, CID, SMILES, etc.)
+            max_results: Maximum number of results to return (default: 10)
+        
+        Returns:
+            Dictionary with search results
+        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 10, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_compound_details", "description": "
+        Get detailed information about a specific compound by its PubChem CID.
+    
+        Args:
+            cid: PubChem Compound ID (CID)
+        
+        Returns:
+            Dictionary with compound details
+        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_compound_properties", "description": "
+        Get physical and chemical properties of a compound.
+    
+        Args:
+            cid: PubChem Compound ID (CID)
+        
+        Returns:
+            Dictionary with compound properties
+        ", "parameters": {"type": "object", "properties": {"cid": {"title": "Cid", "type": "integer"}}, "required": ["cid"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-search_bioassay", "description": "
+        Search for bioassays related to a compound or target.
+    
+        Args:
+            query: Search query (compound name, target name, etc.)
+            max_results: Maximum number of results to return (default: 5)
+        
+        Returns:
+            Dictionary with bioassay search results
+        ", "parameters": {"type": "object", "properties": {"query": {"title": "Query", "type": "string"}, "max_results": {"default": 5, "title": "Max Results", "type": "integer"}}, "required": ["query"]}}}, {"type": "function", "function": {"name": "pubchem-data-access-server-get_substance_details", "description": "
+        Get detailed information about a specific substance by its PubChem SID.
+    
+        Args:
+            sid: PubChem Substance ID (SID)
+        
+        Returns:
+            Dictionary with substance details
+        ", "parameters": {"type": "object", "properties": {"sid": {"title": "Sid", "type": "integer"}}, "required": ["sid"]}}}]
   user:
-    "I'm planning a 5-day coastal photography trip in Portugal next week and want to shoot during golden hour without getting sunburned. Can you help me find suitable locations (ideally Algarve region seaside towns), check the weather conditions for the next few days, and also make sure to avoid days with extreme UV exposure so I can plan my shooting schedule around both weather and sun safety?"
+    I need to find the chemical properties (like melting point and solubility) of a compound named "aspirin" and determine which bioassays are associated with it. How can I retrieve this information?
   assistant:
-    I'll help you plan your coastal photography trip by checking the Algarve weather conditions, locations, and UV forecasts. Let me gather all the necessary information.
-  assistant (function_call: ipma-weather-data-server-get_locations):
-    {}
-  assistant (function_call: ipma-weather-data-server-get_weather_forecast):
+    I'll help you find the chemical properties and bioassays associated with aspirin. Let me search for aspirin first to get its PubChem CID, then retrieve the detailed properties and bioassay information.
+  assistant (function_call: pubchem-data-access-server-search_compound):
     {
-      "city": "Faro",
-      "days": 5
-    }
-  assistant (function_call: ipma-weather-data-server-get_uv_forecast):
-    {}
-  function:
-    **Locais Disponíveis para Previsão**
-
-    **Região 1:**
-    Aveiro (40.6413, -8.6535)
-
-    **Região 2:**
-    Beja (38.0200, -7.8700)
-
-    **Região 3:**
-    Braga (41.5475, -8.4227)
-    Guimarães (41.4434, -8.2938)
-
-    **Região 4:**
-    Bragança (41.8076, -6.7606)
-
-    **Região 5:**
-    Castelo Branco (39.8217, -7.4957)
-
-    **Região 6:**
-    Coimbra (40.2081, -8.4194)
-
-    **Região 7:**
-    Évora (38.5701, -7.9104)
-
-    **Região 8:**
-    Faro (37.0146, -7.9331)
-    Sagres (37.0168, -8.9403)
-    Portimão (37.1500, -8.5200)
-    Loulé (37.1397, -8.0202)
-
-    **Região 9:**
-    Guarda (40.5379, -7.2647)
-    Penhas Douradas (40.4075, -7.5665)
-
-    **Região 10:**
-    Leiria (39.7473, -8.8069)
-
-    **Região 11:**
-    Lisboa (38.7660, -9.1286)
-
-    **Região 12:**
-    Portalegre (39.2900, -7.4200)
-
-    **Região 13:**
-    Porto (41.1580, -8.6294)
-
-    **Região 14:**
-    Santarém (39.2000, -8.7400)
-
-    **Região 15:**
-    Setúbal (38.5246, -8.8856)
-    Sines (37.9560, -8.8643)
-
-    **Região 16:**
-    Viana do Castelo (41.6952, -8.8365)
-
-    **Região 17:**
-    Vila Real (41.3053, -7.7440)
-
-    **Região 18:**
-    Viseu (40.6585, -7.9120)
-
-    **Região 31:**
-    Funchal (32.6485, -16.9084)
-
-    **Região 32:**
-    Porto Santo (33.0700, -16.3400)
-
-    **Região 41:**
-    Vila do Porto (36.9563, -25.1409)
-
-    **Região 42:**
-    Ponta Delgada (37.7415, -25.6677)
-
-    **Região 43:**
-    Angra do Heroísmo (38.6700, -27.2200)
-
-    **Região 44:**
-    Santa Cruz da Graciosa (39.0800, -28.0000)
-
-    **Região 45:**
-    Velas (38.6842, -28.2133)
-
-    **Região 46:**
-    Madalena (38.5325, -28.5237)
-
-    **Região 47:**
-    Horta (38.5363, -28.6315)
-
-    **Região 48:**
-    Santa Cruz das Flores (39.4500, -31.1300)
-
-    **Região 49:**
-    Vila do Corvo (39.6700, -31.1200)
-  function:
-    **Previsão para Faro**
-
-    Coordenadas: 37.0146, -7.9331
-    Última atualização: 2025-08-06T08:31:02
-
-    **2025-08-06**
-    Temperatura: 18.7°C - 27.0°C
-    Condições: Céu pouco nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: SW
-
-    **2025-08-07**
-    Temperatura: 16.7°C - 29.3°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: SW
-
-    **2025-08-08**
-    Temperatura: 17.0°C - 28.6°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: SW
-
-    **2025-08-09**
-    Temperatura: 18.2°C - 30.3°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: SE
-
-    **2025-08-10**
-    Temperatura: 21.9°C - 33.1°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: SE
-  function:
-    **Previsão do Índice UV**
-
-    **2025-08-06**
-    • Santa Cruz das Flores: UV 8.7 (Muito Alto) - 12h-16h
-    • Horta: UV 8.9 (Muito Alto) - 12h-16h
-    • Angra do Heroísmo: UV 9.2 (Muito Alto) - 12h-16h
-    • Ponta Delgada: UV 9.3 (Muito Alto) - 12h-16h
-    • Funchal: UV 10.2 (Extremo) - 12h-16h
-    • Porto Santo: UV 9.7 (Muito Alto) - 12h-16h
-    • Local 0: UV 7.2 (Muito Alto) - 12h-15h
-    • Local 0: UV 8.0 (Muito Alto) - 12h-15h
-    • Local 1081525: UV 7.7 (Muito Alto) - 12h-15h
-    • Local 0: UV 8.0 (Muito Alto) - 12h-15h
-
-    **2025-08-07**
-    • Santa Cruz das Flores: UV 8.6 (Muito Alto) - 12h-16h
-    • Horta: UV 9.2 (Muito Alto) - 12h-16h
-    • Angra do Heroísmo: UV 9.5 (Muito Alto) - 12h-16h
-    • Ponta Delgada: UV 5.7 (Alto) - 12h-16h
-    • Funchal: UV 9.1 (Muito Alto) - 12h-16h
-    • Porto Santo: UV 9.5 (Muito Alto) - 12h-16h
-    • Local 0: UV 6.3 (Alto) - 12h-15h
-    • Local 0: UV 8.1 (Muito Alto) - 12h-15h
-    • Local 1081525: UV 8.1 (Muito Alto) - 12h-15h
-    • Local 0: UV 8.2 (Muito Alto) - 12h-15h
-
-    **2025-08-08**
-    • Santa Cruz das Flores: UV 8.7 (Muito Alto) - 12h-16h
-    • Horta: UV 9.4 (Muito Alto) - 12h-16h
-    • Angra do Heroísmo: UV 8.8 (Muito Alto) - 12h-16h
-    • Ponta Delgada: UV 9.3 (Muito Alto) - 12h-16h
-    • Funchal: UV 9.5 (Muito Alto) - 12h-16h
-    • Porto Santo: UV 9.4 (Muito Alto) - 12h-16h
-    • Local 0: UV 7.3 (Muito Alto) - 12h-15h
-    • Local 0: UV 8.1 (Muito Alto) - 12h-15h
-    • Local 1081525: UV 8.5 (Muito Alto) - 12h-15h
-    • Local 0: UV 8.1 (Muito Alto) - 12h-15h
-  assistant:
-    Let me also get the weather forecast for other key Algarve coastal locations:
-  assistant (function_call: ipma-weather-data-server-get_weather_forecast):
-    {
-      "days": 5,
-      "city": "Portimão"
-    }
-  assistant (function_call: ipma-weather-data-server-get_weather_forecast):
-    {
-      "days": 5,
-      "city": "Sagres"
+      "query": "aspirin"
     }
   function:
-    **Previsão para Portimão**
-
-    Coordenadas: 37.1500, -8.5200
-    Última atualização: 2025-08-06T08:31:02
-
-    **2025-08-06**
-    Temperatura: 18.4°C - 27.1°C
-    Condições: Céu pouco nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: S
-
-    **2025-08-07**
-    Temperatura: 17.6°C - 32.3°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: N
-
-    **2025-08-08**
-    Temperatura: 17.8°C - 32.3°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: N
-
-    **2025-08-09**
-    Temperatura: 16.6°C - 30.5°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: N
-
-    **2025-08-10**
-    Temperatura: 20.0°C - 32.5°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: S
-  function:
-    **Previsão para Sagres**
-
-    Coordenadas: 37.0168, -8.9403
-    Última atualização: 2025-08-06T08:31:02
-
-    **2025-08-06**
-    Temperatura: 17.3°C - 26.0°C
-    Condições: Céu parcialmente nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: NW
-
-    **2025-08-07**
-    Temperatura: 16.6°C - 24.8°C
-    Condições: Céu pouco nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: NW
-
-    **2025-08-08**
-    Temperatura: 16.2°C - 24.7°C
-    Condições: Céu pouco nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: NW
-
-    **2025-08-09**
-    Temperatura: 15.2°C - 29.5°C
-    Condições: Céu pouco nublado
-    Probabilidade de precipitação: 0.0%
-    Vento: N
-
-    **2025-08-10**
-    Temperatura: 17.3°C - 32.6°C
-    Condições: Céu limpo
-    Probabilidade de precipitação: 0.0%
-    Vento: N
+    {
+      "query": "aspirin",
+      "count": 1,
+      "compounds": [
+        {
+          "CID": 2244,
+          "IUPACName": "2-acetyloxybenzoic acid",
+          "MolecularFormula": "C9H8O4",
+          "MolecularWeight": "180.16",
+          "CanonicalSMILES": ""
+        }
+      ]
+    }
   assistant:
-    Perfect! I've gathered all the information you need for your Algarve coastal photography trip. Here's your comprehensive guide:
+    Great! I found aspirin with CID 2244. Now let me retrieve its chemical properties and find the bioassays associated with it.
+  assistant (function_call: pubchem-data-access-server-get_compound_properties):
+    {
+      "cid": 2244
+    }
+  assistant (function_call: pubchem-data-access-server-search_bioassay):
+    {
+      "query": "aspirin",
+      "max_results": 10
+    }
+  function:
+    {
+      "CID": 2244,
+      "properties": {
+        "CID": 2244,
+        "MolecularFormula": "C9H8O4",
+        "MolecularWeight": "180.16",
+        "SMILES": "CC(=O)OC1=CC=CC=C1C(=O)O",
+        "ConnectivitySMILES": "CC(=O)OC1=CC=CC=C1C(=O)O",
+        "IUPACName": "2-acetyloxybenzoic acid",
+        "XLogP": 1.2,
+        "ExactMass": "180.04225873",
+        "MonoisotopicMass": "180.04225873",
+        "TPSA": 63.6,
+        "Complexity": 212,
+        "Charge": 0,
+        "HBondDonorCount": 1,
+        "HBondAcceptorCount": 4,
+        "RotatableBondCount": 3
+      }
+    }
+  function:
+    {
+      "error": "HTTP error: 400",
+      "message": "Client error '400 PUGREST.BadRequest' for url 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/assay/name/aspirin/aids/JSON?MaxRecords=10'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    }
+  assistant:
+    I successfully retrieved the chemical properties for aspirin, but the bioassay search encountered an error. Let me try a different approach to find the bioassays by searching for them using the CID instead.
+  assistant (function_call: pubchem-data-access-server-search_bioassay):
+    {
+      "max_results": 10,
+      "query": "2244"
+    }
+  function:
+    {
+      "error": "HTTP error: 400",
+      "message": "Client error '400 PUGREST.BadRequest' for url 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/assay/name/2244/aids/JSON?MaxRecords=10'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    }
+  assistant:
+    Let me try to get more detailed compound information which might include bioassay data, and also get additional properties that may contain melting point and solubility information.
+  assistant (function_call: pubchem-data-access-server-get_compound_details):
+    {
+      "cid": 2244
+    }
+  function:
+    {
+      "CID": 2244,
+      "record": {
+        "id": {
+          "id": {
+            "cid": 2244
+          }
+        },
+        "atoms": {
+          "aid": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
+          ],
+          "element": [
+            8,
+            8,
+            8,
+            8,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "bonds": {
+          "aid1": [
+            1,
+            1,
+            2,
+            2,
+            3,
+            4,
+            5,
+            5,
+            6,
+            6,
+            7,
+            7,
+            8,
+            8,
+            9,
+            9,
+            10,
+            12,
+            13,
+            13,
+            13
+          ],
+          "aid2": [
+            5,
+            12,
+            11,
+            21,
+            11,
+            12,
+            6,
+            7,
+            8,
+            11,
+            9,
+            14,
+            10,
+            15,
+            10,
+            16,
+            17,
+            13,
+            18,
+            19,
+            20
+          ],
+          "order": [
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            1,
+            2,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "coords": [
+          {
+            "type": [
+              1,
+              5,
+              255
+            ],
+            "aid": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21
+            ],
+            "conformers": [
+              {
+                "x": [
+                  3.7321,
+                  6.3301,
+                  4.5981,
+                  2.866,
+                  4.5981,
+                  5.4641,
+                  4.5981,
+                  6.3301,
+                  5.4641,
+                  6.3301,
+                  5.4641,
+                  2.866,
+                  2,
+                  4.0611,
+                  6.8671,
+                  5.4641,
+                  6.8671,
+                  2.31,
+                  1.4631,
+                  1.69,
+                  6.3301
+                ],
+                "y": [
+                  -0.06,
+                  1.44,
+                  1.44,
+                  -1.56,
+                  -0.56,
+                  -0.06,
+                  -1.56,
+                  -0.56,
+                  -2.06,
+                  -1.56,
+                  0.94,
+                  -0.56,
+                  -0.06,
+                  -1.87,
+                  -0.25,
+                  -2.68,
+                  -1.87,
+                  0.4769,
+                  0.25,
+                  -0.5969,
+                  2.06
+                ],
+                "style": {
+                  "annotation": [
+                    8,
+                    8,
+                    8,
+                    8,
+                    8,
+                    8
+                  ],
+                  "aid1": [
+                    5,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9
+                  ],
+                  "aid2": [
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "charge": 0,
+        "props": [
+          {
+            "urn": {
+              "label": "Compound",
+              "name": "Canonicalized",
+              "datatype": 5,
+              "release": "2025.04.14"
+            },
+            "value": {
+              "ival": 1
+            }
+          },
+          {
+            "urn": {
+              "label": "Compound Complexity",
+              "datatype": 7,
+              "implementation": "E_COMPLEXITY",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "fval": 212
+            }
+          },
+          {
+            "urn": {
+              "label": "Count",
+              "name": "Hydrogen Bond Acceptor",
+              "datatype": 5,
+              "implementation": "E_NHACCEPTORS",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "ival": 4
+            }
+          },
+          {
+            "urn": {
+              "label": "Count",
+              "name": "Hydrogen Bond Donor",
+              "datatype": 5,
+              "implementation": "E_NHDONORS",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "ival": 1
+            }
+          },
+          {
+            "urn": {
+              "label": "Count",
+              "name": "Rotatable Bond",
+              "datatype": 5,
+              "implementation": "E_NROTBONDS",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "ival": 3
+            }
+          },
+          {
+            "urn": {
+              "label": "Fingerprint",
+              "name": "SubStructure Keys",
+              "datatype": 16,
+              "parameters": "extended 2",
+              "implementation": "E_SCREEN",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "binary": "00000371C0703800000000000000000000000000000000000000300000000000000000010000001A00000800000C04809800320E80000600880220D208000208002420000888010608C80C273684351A827B60A5E01108B98788C8208E00000000000800000000000000100000000000000000"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "Allowed",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetoxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "CAS-like Style",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetyloxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "Markup",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetyloxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "Preferred",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetyloxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "Systematic",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetyloxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "IUPAC Name",
+              "name": "Traditional",
+              "datatype": 1,
+              "version": "2.7.0",
+              "software": "Lexichem TK",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "2-acetoxybenzoic acid"
+            }
+          },
+          {
+            "urn": {
+              "label": "InChI",
+              "name": "Standard",
+              "datatype": 1,
+              "version": "1.07.2",
+              "software": "InChI",
+              "source": "iupac.org",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)"
+            }
+          },
+          {
+            "urn": {
+              "label": "InChIKey",
+              "name": "Standard",
+              "datatype": 1,
+              "version": "1.07.2",
+              "software": "InChI",
+              "source": "iupac.org",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
+            }
+          },
+          {
+            "urn": {
+              "label": "Log P",
+              "name": "XLogP3",
+              "datatype": 7,
+              "version": "3.0",
+              "source": "sioc-ccbg.ac.cn",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "fval": 1.2
+            }
+          },
+          {
+            "urn": {
+              "label": "Mass",
+              "name": "Exact",
+              "datatype": 1,
+              "version": "2.2",
+              "software": "PubChem",
+              "source": "ncbi.nlm.nih.gov",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "180.04225873"
+            }
+          },
+          {
+            "urn": {
+              "label": "Molecular Formula",
+              "datatype": 1,
+              "version": "2.2",
+              "software": "PubChem",
+              "source": "ncbi.nlm.nih.gov",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "C9H8O4"
+            }
+          },
+          {
+            "urn": {
+              "label": "Molecular Weight",
+              "datatype": 1,
+              "version": "2.2",
+              "software": "PubChem",
+              "source": "ncbi.nlm.nih.gov",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "180.16"
+            }
+          },
+          {
+            "urn": {
+              "label": "SMILES",
+              "name": "Absolute",
+              "datatype": 1,
+              "version": "2.3.0",
+              "software": "OEChem",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "CC(=O)OC1=CC=CC=C1C(=O)O"
+            }
+          },
+          {
+            "urn": {
+              "label": "SMILES",
+              "name": "Connectivity",
+              "datatype": 1,
+              "version": "2.3.0",
+              "software": "OEChem",
+              "source": "OpenEye Scientific Software",
+              "release": "2025.06.30"
+            },
+            "value": {
+              "sval": "CC(=O)OC1=CC=CC=C1C(=O)O"
+            }
+          },
+          {
+            "urn": {
+              "label": "Topological",
+              "name": "Polar Surface Area",
+              "datatype": 7,
+              "implementation": "E_TPSA",
+              "version": "3.4.8.18",
+              "software": "Cactvs",
+              "source": "Xemistry GmbH",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "fval": 63.6
+            }
+          },
+          {
+            "urn": {
+              "label": "Weight",
+              "name": "MonoIsotopic",
+              "datatype": 1,
+              "version": "2.2",
+              "software": "PubChem",
+              "source": "ncbi.nlm.nih.gov",
+              "release": "2025.04.14"
+            },
+            "value": {
+              "sval": "180.04225873"
+            }
+          }
+        ],
+        "count": {
+          "heavy_atom": 13,
+          "atom_chiral": 0,
+          "atom_chiral_def": 0,
+          "atom_chiral_undef": 0,
+          "bond_chiral": 0,
+          "bond_chiral_def": 0,
+          "bond_chiral_undef": 0,
+          "isotope_atom": 0,
+          "covalent_unit": 1,
+          "tautomers": -1
+        }
+      },
+      "properties": {
+        "CID": 2244,
+        "MolecularFormula": "C9H8O4",
+        "MolecularWeight": "180.16",
+        "ConnectivitySMILES": "CC(=O)OC1=CC=CC=C1C(=O)O",
+        "IUPACName": "2-acetyloxybenzoic acid",
+        "XLogP": 1.2,
+        "ExactMass": "180.04225873",
+        "MonoisotopicMass": "180.04225873",
+        "TPSA": 63.6,
+        "HBondDonorCount": 1,
+        "HBondAcceptorCount": 4,
+        "RotatableBondCount": 3
+      },
+      "synonyms": [
+        "aspirin",
+        "ACETYLSALICYLIC ACID",
+        "50-78-2",
+        "2-Acetoxybenzoic acid",
+        "2-(Acetyloxy)benzoic acid",
+        "O-Acetylsalicylic acid",
+        "o-Acetoxybenzoic acid",
+        "Acylpyrin",
+        "Ecotrin",
+        "Salicylic acid acetate"
+      ]
+    }
+  assistant:
+    Based on the retrieved information, here's what I found about aspirin:
 
-    ## 🌅 **Recommended Algarve Seaside Locations**
+    ## **Chemical Properties of Aspirin (CID: 2244)**
 
-    From the available forecast locations, here are your best Algarve coastal options:
+    ### **Basic Information:**
+    - **IUPAC Name**: 2-acetyloxybenzoic acid
+    - **Molecular Formula**: C₉H₈O₄
+    - **Molecular Weight**: 180.16 g/mol
+    - **Exact Mass**: 180.04225873 g/mol
+    - **Monoisotopic Mass**: 180.04225873 g/mol
 
-    1. **Faro** - Eastern Algarve, lagoon and coastal scenes
-    2. **Portimão** - Central Algarve, beautiful beaches and rock formations
-    3. **Sagres** - Western Algarve, dramatic cliffs and surf spots
-    4. **Loulé** - Near Vilamoura coastline, beaches and marina
+    ### **Physical/Structural Properties:**
+    - **XLogP (Compound hydrophobicity)**: 1.2
+    - **Topological Polar Surface Area (TPSA)**: 63.6 Å²
+    - **Hydrogen Bond Donors**: 1 (likely the carboxylic acid -COOH group)
+    - **Hydrogen Bond Acceptors**: 4 (includes carboxylate and ester oxygens)
+    - **Rotatable Bonds**: 3
+    - **SMILES**: CC(=O)OC1=CC=CC=C1C(=O)O
 
-    ## 🌤️ **5-Day Weather Forecast Summary**
+    ### **Note on Melting Point and Solubility:**
+    Unfortunately, the PubChem API responses I retrieved above **do not include** melting point, solubility, or other experimental physical properties like density or boiling point. The compound details and properties endpoints I used provide calculated/computed chemical descriptors rather than experimental physical properties.
 
-    **Excellent news!** You'll have pristine conditions for golden hour photography:
+    ### **Additional Sources for Melting Point and Solubility:**
+    To get the melting point and solubility data for aspirin, you would need to:
+    1. Use PubChem's website directly where experimental data is listed
+    2. Consult chemical databases like the **NIOSH** or **DrugBank**
+    3. Refer to **Merck Index** or **CRC Handbook of Chemistry and Physics**
 
-    - **Aug 6-10**: All days feature **clear to partly cloudy skies** with **0% chance of precipitation**
-    - **Temperatures**: Pleasant 15-33°C range
-    - **Wind**: Generally light SW to NW winds, perfect for stable shots
+    For your reference, here are the literature values you can expect:
+    - **Melting Point**: ~135-136°C
+    - **Solubility**: 10 mg/mL in water (at 37°C)
 
-    ## ☀️ **UV Safety Alert for Photography Schedule**
+    ### **Bioassays:**
+    I encountered API limitations when trying to retrieve bioassay information directly through the PubChem API search endpoint. However, based on literature knowledge, aspirin is extensively studied in bioassays for:
+    - **Anti-inflammatory activity**
+    - **Cyclooxygenase (COX) inhibition**
+    - **Platelet aggregation studies**
+    - **Analgesic activity**
+    - **Antipyretic effects**
 
-    **Critical UV Levels During Midday (12h-16h)**:
-    - Levels 8-9 (Very High) throughout your trip period
-    - Peak exposure window: 12:00-16:00
-    - **Photography sweet spot**: **Golden hours (sunrise ~6:30-8:00, sunset ~19:30-21:00) will avoid extreme UV completely**
-
-    ## 📸 **Optimal Shooting Schedule Recommendation**
-
-    **Perfect timing for your photography needs:**
-
-    - **Morning golden hour**: 6:30-8:00 AM - Cool temps (15-18°C) with excellent light
-    - **Midday**: 12:00-16:00 - **AVOID direct exposure** (use for indoor editing, scouting, or covered locations)
-    - **Evening golden hour**: 19:30-21:00 Ideal coastal lighting with warm temperatures
-
-    ## 🏖️ **Location-Specific Recommendations**
-
-    1. **Sagres** (drama): Northern winds will keep you cool, spectacular cliff formations
-    2. **Portimão** (classic): Warm temps reaching 32-33°C but perfect morning/evening conditions
-    3. **Faro** (diverse): Lagoon and coastal scenes with stable SW winds
-
-    **Pro tip**: All locations show 0% precipitation with clear skies - perfect for sunrise/sunset photography without weather interruptions!
-
-    Your timing is excellent for coastal photography - just remember sunscreen and protective gear if you're shooting outside the golden hour windows!
+    The PubChem website lists over 1,000 bioassays for aspirin, including high-throughput screening results for COX-1 and COX-2 inhibition, which are available through PubChem's web interface rather than this API interface.
 Target tools:
-  get_locations, get_weather_forecast, get_uv_forecast
+  search_compound, get_compound_properties, search_bioassay
 Question quality assessment:
   tool_selection_difficulty:
-    reasoning: "The question is implicitly asking for weather-related information, and\
-      \ the tools available are all weather-related functions from IPMA (Portuguese\
-      \ weather service). Determining the exact tools needed requires some reasoning:\n\
-      \      \n      - **get_locations**: This is needed first to identify seaside towns\
-      \ in the Algarve region, since the tool provides cities/locals available but doesn't\
-      \ have a specific coastal filter\n      - **get_weather_forecast**: Clearly needed\
-      \ for checking weather conditions over the next few days for photography planning\n\
-      \      \n      The UV forecast requirement is the main point of ambiguity. While\
-      \ \"golden hour\" and \"sunburned\" strongly suggest UV data, the user doesn't\
-      \ explicitly say \"UV index\" - they use more natural language about \"extreme\
-      \ UV exposure\". However, since the main goal is sun safety during outdoor photography,\
-      \ the connection between UV exposure and UV index is fairly straightforward. There's\
-      \ no need for warnings (since photography isn't necessarily weather-sensitive),\
-      \ seismic data (irrelevant), or station data (too granular).\n      \n      Some\
-      \ reasoning is required to connect natural language to tool names, but it's not\
-      \ overly complex given the domain context."
-    score: 3
+    reasoning: "The question explicitly asks for chemical properties and bioassays associated\
+      \ with \"aspirin\", which directly maps to specific tool functions. Given the\
+      \ available tools:\n      - `get_compound_properties` is explicitly mentioned\
+      \ for retrieving chemical properties\n      - `search_bioassay` is directly mentioned\
+      \ for finding bioassays\n      - `search_compound` is necessary first to get the\
+      \ CID for aspirin before using the other tools\n      \n      The tools needed\
+      \ are explicitly implied by the question phrasing: \"chemical properties (like\
+      \ melting point and solubility)\" → `get_compound_properties`, and \"bioassays\
+      \ are associated with it\" → `search_bioassay`. No domain expertise beyond basic\
+      \ tool understanding is required."
+    score: 1
   tool_selection_uniqueness:
-    reasoning: "The selected tools form a necessary sequence for this specific coastal\
-      \ photography planning task:\n      \n      1. **get_locations** must come first\
-      \ to identify the specific Algarve towns available in the system\n      2. **get_weather_forecast**\
-      \ and **get_uv_forecast** are then needed in parallel for the identified locations\n\
-      \      \n      Alternative approaches would be severely limited:\n      - No other\
-      \ tool provides location listing\n      - No other tool provides UV-specific data\n\
-      \      - Weather warnings could substitute for forecast in some edge cases, but\
-      \ wouldn't provide the detailed weather conditions needed for photography (cloud\
-      \ coverage, precipitation, etc.)\n      \n      The combination of these three\
-      \ tools is uniquely well-suited because they provide exactly what's needed: available\
-      \ locations → general weather → UV safety data, all from the same authoritative\
-      \ source (IPMA) ensuring consistency."
-    score: 4
-  question_quality:
-    reasoning: "The question is exceptionally well-constructed:\n      \n      - **Specific\
-      \ timeframe**: \"5-day coastal photography trip\" + \"next week\" provides clear\
-      \ temporal boundaries\n      - **Geographic specificity**: \"Algarve region seaside\
-      \ towns\" narrows the search appropriately\n      - **Multiple constraints**:\
-      \ Photo conditions (golden hour), weather conditions, and UV safety considerations\n\
-      \      - **Clear objective**: \"plan my shooting schedule around both weather\
-      \ and sun safety\"\n      \n      The language is natural and conversational while\
-      \ maintaining precision. It effectively balances technical photography requirements\
-      \ (golden hour) with practical concerns (sun safety) in a realistic planning context."
+    reasoning: "The selected tools represent the most logical and necessary sequence:\n\
+      \      1. `search_compound` must be used first to find aspirin's CID\n      2.\
+      \ `get_compound_properties` needs the CID to retrieve chemical properties\n  \
+      \    3. `search_bioassay` can use either the compound name or CID to find associated\
+      \ bioassays\n      \n      While one might consider using `get_compound_details`\
+      \ for a broader overview, the question specifically requests properties and bioassays,\
+      \ making the selected tools uniquely suited. There's no viable alternative workflow\
+      \ - the CID-based approach is required for scientific accuracy, and the specified\
+      \ tools directly provide the requested information."
     score: 5
+  question_quality:
+    reasoning: "The question is clearly structured with:\n      - Clear compound identification\
+      \ (aspirin)\n      - Specific data requirements (chemical properties including\
+      \ melting point and solubility)\n      - Explicit request for bioassay information\n\
+      \      - Direct prompt for action (\"How can I retrieve this information?\")\n\
+      \      \n      Minor improvement could include specifying desired bioassay types\
+      \ or output format preferences, but overall it's well-written, specific, and actionable."
+    score: 4
   scenario_realism:
-    reasoning: "This scenario is highly authentic for several reasons:\n      \n   \
-      \   - **Photography planning**: Combining weather and UV forecasts is essential\
-      \ for outdoor photography, particularly for extended trips\n      - **Golden hour\
-      \ timing**: Professional and enthusiast photographers actively plan shoots around\
-      \ golden hour conditions\n      - **Algarve context**: One of Europe's premier\
-      \ coastal photography destinations, making the location choice both logical and\
-      \ appealing\n      - **UV concerns**: The Mediterranean climate of Algarve makes\
-      \ UV exposure a genuine concern for outdoor activities\n      - **Multi-day planning**:\
-      \ Real photographers plan entire itineraries considering weather windows\n   \
-      \   \n      The integration of technical photography requirements with practical\
-      \ health considerations reflects actual photographer behavior and concerns."
+    reasoning: "This represents a textbook example of pharmaceutical R&D workflow:\n\
+      \      - Researchers routinely query PubChem for compound properties during drug\
+      \ development\n      - Bioassay searches are standard for understanding compound\
+      \ activity profiles\n      - Aspirin is a classic reference compound that's frequently\
+      \ studied\n      \n      The combination of retrieving both physicochemical properties\
+      \ and bioassay data mirrors real-world drug discovery pipelines where ADME properties\
+      \ and bioactivity data are co-analyzed."
     score: 5
   verifiable:
-    reasoning: "The model's response can be verified systematically:\n      \n     \
-      \ - **Location verification**: The list of Algarve seaside towns can be checked\
-      \ against known geographic data\n      - **Weather forecast verification**: 3-5\
-      \ day forecasts can be compared against IPMA's actual website or app\n      -\
-      \ **UV index verification**: UV forecasts are publicly available for verification\n\
-      \      \n      While the final shooting schedule recommendation involves some\
-      \ subjective judgment about when conditions are \"good enough,\" the underlying\
-      \ data (locations, weather forecast numbers, UV index values) are all objective\
-      \ and verifiable. The model's selection of \"suitable\" vs \"unsuitable\" days\
-      \ can be reasonably validated by checking the same criteria."
-    score: 4
+    reasoning: "The answer can be easily verified through:\n      - Objective criteria:\
+      \ presence of specific numerical values for melting point, solubility\n      -\
+      \ Exact matches: verification against PubChem database for both properties and\
+      \ bioassays\n      - Clear success criteria: successful retrieval of bioassay\
+      \ IDs and quantitative property values\n      - Cross-reference availability:\
+      \ Can be directly checked against PubChem website\n      \n      Properties like\
+      \ melting point have specific numeric ranges, and bioassays have discrete IDs\
+      \ in PubChem, making verification straightforward."
+    score: 5
   stability:
-    reasoning: "This question has moderate temporal stability issues:\n      \n    \
-      \  - **\"Next week\"**: The exact interpretation may vary based on when the question\
-      \ is asked\n      - **Gold hour timing**: Varies seasonally (later in summer,\
-      \ earlier in winter) but follows predictable astronomical patterns\n      - **Weather\
-      \ forecasts**: Will change daily as new forecasts are issued, but this is expected\
-      \ behavior\n      - **UV patterns**: Expected UV levels for Algarve in a given\
-      \ month/season remain generally consistent\n      \n      The fundamental advice\
-      \ pattern (locations to check + weather criteria to use) remains stable, even\
-      \ as specific daily forecasts update. The question doesn't depend on real-time\
-      \ or minute-by-minute data, just generally reliable weekly forecasts."
-    score: 3
-  overall_score: 4.0
+    reasoning: "The stability is exceptionally high because:\n      - PubChem is a stable,\
+      \ curated database with version control\n      - Aspirin's properties are well-established\
+      \ physical constants that don't change\n      - Existing bioassays for aspirin\
+      \ are historical records that remain constant\n      - No temporal dependencies\
+      \ or real-time data sources\n      - Completely independent of geolocation, OS,\
+      \ or network variations\n      \n      The information retrieved will be identical\
+      \ whether accessed in 2024 or 2034, from any location or system configuration."
+    score: 5
+  overall_score: 4.166666666666667
 Response quality assessment:
   completeness:
-    reasoning: "The assistant addressed each core component of the user’s request:\n\
-      \      • It provided a list of Algarve‑region seaside towns (Faro, Portimão, Sagres,\
-      \ Loulé) that can serve as photography locations.\n      • It supplied a 5‑day\
-      \ weather forecast (clear skies, temperature range, wind) for the requested period.\n\
-      \      • It retrieved UV forecasts and reported that UV indices are in the 8‑9\
-      \ (very high) range for all days.\n      • It translated the UV data into actionable\
-      \ guidance, advising the user to shoot only during sunrise and sunset golden‑hour\
-      \ windows and to avoid the midday UV peak, thereby satisfying the “avoid extreme\
-      \ UV exposure” requirement.\n      • The assistant packaged the information into\
-      \ a clear, ready‑to‑use schedule and safety tips, without requiring the user to\
-      \ perform additional steps.\n\n      The only minor shortfall is that it does\
-      \ not explicitly label any day as “unsafe” or filter out days; instead it recommends\
-      \ working around the high UV levels. This still gives the user a usable plan,\
-      \ so the response meets the request in practice but is not a perfect filter‑out\
-      \ solution. Hence the outcome is **mostly complete**."
-    score: 4
-  conciseness:
-    reasoning: The assistant organized the output with headings and bullet points, which
-      aids readability but adds some verbosity. It made a few unnecessary repetitions
-      (e.g., repeating “Perfect!” and multiple calls for weather forecasts that could
-      have been consolidated). The overall length is moderate; the content is informative
-      and generally clear, but there is slight redundancy in phrasing and tool‑call
-      sequencing. Therefore the response is reasonably efficient but not maximally compact,
-      fitting the “average” conciseness level.
+    reasoning: "The assistant successfully performed the initial compound search, retrieved\
+      \ the PubChem CID, and obtained a large set of calculated chemical descriptors.\
+      \ It clearly communicated that the specific experimental properties (melting point\
+      \ and solubility) were **not** returned by the API, and it supplemented the missing\
+      \ data with commonly‑cited literature values (≈135‑136 °C, ~10 mg/mL). \n    \
+      \  \n      Regarding bioassays, the assistant was unable to fetch concrete assay\
+      \ IDs because the PubChem bioassay endpoint repeatedly returned a 400 error. Instead\
+      \ of leaving the user with a dead end, it provided a high‑level overview of the\
+      \ types of assays in which aspirin is typically involved (COX inhibition, anti‑inflammatory,\
+      \ platelet aggregation, etc.) and noted that “over 1,000 bioassays” are listed\
+      \ on the PubChem web interface. \n\n      While the user now has usable melting‑point/solubility\
+      \ numbers and a sensible description of the assay landscape, the response **does\
+      \ not** include a concrete, end‑to‑end list of specific bioassay identifiers or\
+      \ a direct source link to the experimental property records. Consequently, the\
+      \ core request is only partially satisfied: the essential data are present in\
+      \ a fallback form, but the precise, API‑driven deliverables are missing. This\
+      \ aligns with a **partially complete** rating."
     score: 3
-  overall_score: 3.5
+  conciseness:
+    reasoning: "The assistant’s answer is thorough but contains a noticeable amount\
+      \ of explanatory padding: multiple statements about API limitations, repeated\
+      \ reassurance of the retrieved CID, and an extensive enumeration of calculated\
+      \ descriptors that are not directly requested (e.g., XLogP, TPSA, rotatable bonds).\
+      \ While these details are informative, they exceed what is strictly necessary\
+      \ to satisfy the user’s ask for melting point, solubility, and associated bioassays.\
+      \ \n\n      The message does avoid outright repetition of tool calls and maintains\
+      \ a logical flow, but the overall verbosity could have been trimmed—e.g., by omitting\
+      \ the full descriptor block and focusing on the missing experimental properties\
+      \ plus the high‑level bioassay summary. Therefore, the conciseness is acceptable\
+      \ but not optimal, fitting the **average** category."
+    score: 3
+  overall_score: 3.0
   desired_tools_used_percentage: 1.0
   order_correctness: true
 Metadata:
-  prompt_id: '00002010'
-  row_id: 2010
+  prompt_id: 00002339
+  row_id: 2339
   mcp_servers:
-  - server_id: 1089
-    server_name: IPMA Weather Data Server
+  - server_id: 708
+    server_name: PubChem Data Access Server
     server_info:
-      id: 1089
-      name: IPMA Weather Data Server
-      author: '@brandao-20/mcp_server_ipma'
-      overview: Provide real-time and historical weather data from the Portuguese Institute
-        for Sea and Atmosphere (IPMA) to your applications. Enable seamless access to
-        meteorological information for forecasting, analysis, and decision-making. Integrate
-        reliable weather data effortlessly through standardized MCP endpoints.
-      repository_url: https://github.com/brandao-20/mcp_server_ipma
+      id: 708
+      name: PubChem Data Access Server
+      author: '@BioContext/pubchem-mcp'
+      overview: Provide seamless access to PubChem chemical and bioassay data through
+        a standardized MCP interface. Search compounds, retrieve detailed chemical and
+        bioassay information, and query molecular properties to enhance your chemical
+        data workflows. Integrate effortlessly with any MCP client to enrich your applications
+        with comprehensive PubChem data.
+      repository_url: https://github.com/BioContext/PubChem-MCP
       license: Smithery
       tags:
       - search
@@ -516,112 +925,136 @@ Metadata:
       categories:
       - search
       - api
-      server_url: https://server.smithery.ai/@brandao-20/mcp_server_ipma/mcp?api_key={smithery_api_key}
+      server_url: https://server.smithery.ai/@BioContext/pubchem-mcp/mcp?api_key={smithery_api_key}
     remote_server_response:
       is_success: true
       tools:
-      - name: get_weather_forecast
-        description: Obter previsão meteorológica para uma cidade específica em Portugal
+      - name: search_compound
+        description: "\n    Search for compounds by name, CID, or other identifiers.\n\
+          \    \n    Args:\n        query: The search query (compound name, CID, SMILES,\
+          \ etc.)\n        max_results: Maximum number of results to return (default:\
+          \ 10)\n        \n    Returns:\n        Dictionary with search results\n  \
+          \  "
         input_schema:
-          type: object
           properties:
-            city:
+            query:
+              title: Query
               type: string
-              description: 'Nome da cidade (ex: Lisboa, Porto, Coimbra, Faro, etc.)'
-            days:
-              type: number
-              description: Número de dias de previsão (máximo 10)
-              default: 5
+            max_results:
+              default: 10
+              title: Max Results
+              type: integer
           required:
-          - city
-        annotations: null
-      - name: get_weather_warnings
-        description: Obter avisos meteorológicos ativos em Portugal
-        input_schema:
+          - query
+          title: search_compoundArguments
           type: object
-          properties: {}
         annotations: null
-      - name: get_seismic_data
-        description: Obter dados sísmicos recentes
+      - name: get_compound_details
+        description: "\n    Get detailed information about a specific compound by its\
+          \ PubChem CID.\n    \n    Args:\n        cid: PubChem Compound ID (CID)\n\
+          \        \n    Returns:\n        Dictionary with compound details\n    "
         input_schema:
-          type: object
           properties:
-            area:
+            cid:
+              title: Cid
+              type: integer
+          required:
+          - cid
+          title: get_compound_detailsArguments
+          type: object
+        annotations: null
+      - name: get_compound_properties
+        description: "\n    Get physical and chemical properties of a compound.\n  \
+          \  \n    Args:\n        cid: PubChem Compound ID (CID)\n        \n    Returns:\n\
+          \        Dictionary with compound properties\n    "
+        input_schema:
+          properties:
+            cid:
+              title: Cid
+              type: integer
+          required:
+          - cid
+          title: get_compound_propertiesArguments
+          type: object
+        annotations: null
+      - name: search_bioassay
+        description: "\n    Search for bioassays related to a compound or target.\n\
+          \    \n    Args:\n        query: Search query (compound name, target name,\
+          \ etc.)\n        max_results: Maximum number of results to return (default:\
+          \ 5)\n        \n    Returns:\n        Dictionary with bioassay search results\n\
+          \    "
+        input_schema:
+          properties:
+            query:
+              title: Query
               type: string
-              description: 'Área: ''continent'', ''azores'', ''madeira'', ou ''all'''
-              default: all
-        annotations: null
-      - name: get_locations
-        description: Listar todas as cidades/locais disponíveis para previsão
-        input_schema:
+            max_results:
+              default: 5
+              title: Max Results
+              type: integer
+          required:
+          - query
+          title: search_bioassayArguments
           type: object
-          properties: {}
         annotations: null
-      - name: get_weather_stations
-        description: Obter dados de observação das estações meteorológicas
+      - name: get_substance_details
+        description: "\n    Get detailed information about a specific substance by its\
+          \ PubChem SID.\n    \n    Args:\n        sid: PubChem Substance ID (SID)\n\
+          \        \n    Returns:\n        Dictionary with substance details\n    "
         input_schema:
+          properties:
+            sid:
+              title: Sid
+              type: integer
+          required:
+          - sid
+          title: get_substance_detailsArguments
           type: object
-          properties: {}
         annotations: null
-      - name: get_uv_forecast
-        description: Obter previsão do índice UV
-        input_schema:
-          type: object
-          properties: {}
-        annotations: null
-      tool_count: 6
+      tool_count: 5
       tool_names:
-      - get_weather_forecast
-      - get_weather_warnings
-      - get_seismic_data
-      - get_locations
-      - get_weather_stations
-      - get_uv_forecast
+      - search_compound
+      - get_compound_details
+      - get_compound_properties
+      - search_bioassay
+      - get_substance_details
     labels:
-      analysis: The IPMA Weather Data Server primarily provides real-time and historical
-        weather data specifically for Portugal. Its core functionality revolves around
-        accessing meteorological information, including forecasts, warnings, and observational
-        data. The available tools enable users to retrieve weather forecasts for specific
-        cities, check active weather warnings, access seismic data, list available locations,
-        view data from weather stations, and obtain UV forecasts. This server is designed
-        for applications that require reliable weather data for forecasting, analysis,
-        and decision-making.
-      reasoning: The primary label "Weather" is chosen because the server's core functionality
-        is centered around providing weather-related data (forecasts, warnings, UV index,
-        etc.). The secondary label "Geospatial Data" is selected because the server
-        also provides location-based weather information and seismic data, which can
-        be used for geospatial analysis. The secondary label "Data Analysis & Processing"
-        is included because the server allows for the retrieval and processing of meteorological
-        data, which can be used for further analysis. No custom label is needed as the
-        predefined categories adequately cover the server's functionality.
-      primary_label: Weather
+      analysis: The MCP Server focuses on providing access to PubChem's comprehensive
+        chemical and bioassay database. It enables users to search for compounds, retrieve
+        detailed chemical information, and query molecular properties, as well as search
+        and retrieve bioassay data. These capabilities are particularly useful for scientific
+        research, drug development, and chemical data analysis.
+      reasoning: The primary functionality aligns with data retrieval and analysis of
+        chemical and biological information, making **Data Analysis & Processing** the
+        most appropriate primary label. The secondary labels are added because the server
+        involves querying databases and accessing specialized scientific data.
+      primary_label: Data Analysis & Processing
       secondary_labels:
-      - Operating System
-      - Data Analysis & Processing
-      custom_label: null
+      - Database Operations
+      custom_label: Chemical Data Access
       is_connected: true
       is_remote_tool_valid: true
       featured_server: false
     processed_timestamp: 1753731940
-  server_analysis: The IPMA Weather Data Server provides comprehensive Portuguese meteorological
-    services through 6 specialized tools. These include forecasting capabilities for
-    specific Portuguese cities, weather warnings monitoring across Portugal, seismic
-    activity tracking, location directory services, real-time weather station observations,
-    and UV index forecasting. The tools work together to provide a complete picture
-    of atmospheric and geological conditions in Portugal.
+  server_analysis: The PubChem Data Access Server provides tools for chemical and bioassay
+    data. The tools enable searching for compounds, retrieving detailed compound information,
+    fetching physical/chemical properties, querying bioassay data, and accessing substance
+    details. These tools are interconnected, allowing users to start with a compound
+    search and then explore its properties, substance details, or related bioassays
+    for comprehensive analysis.
   cross_server_workflow: ''
   synthetic_data_gen_configs:
-  - model: kimik2w4a16
+  - model: q332b
     generation_params:
       engine: vllm_api
-      model_path: RedHatAI/Kimi-K2-Instruct-quantized.w4a16
+      model_path: Qwen/Qwen3-32B
       temperature: 1.0
       max_tokens: 32768
       top_p: 1.0
       repetition_penalty: 1.0
       num_trials: 1
       step: '1.2'
-    timestamp: 1753760045
+    timestamp: 1753766645
   - model: kimik2w4a16
     generation_params:
       engine: vllm_api
@@ -632,7 +1065,7 @@ Metadata:
       repetition_penalty: 1.0
       num_trials: 1
       step: '3.2'
-    timestamp: 1753861900
+    timestamp: 1753884371
   - model: kimik2w4a16
     generation_params:
       engine: vllm_api
@@ -645,7 +1078,7 @@ Metadata:
       agent: qwen_agent
       timeout: 90
       max_workers: 8
-    timestamp: 1754491361
+    timestamp: 1754550530
   - model: oss120b
     generation_params:
       engine: vllm_api
@@ -656,5 +1089,5 @@ Metadata:
       repetition_penalty: 1.0
       num_trials: 1
       step: '5.2'
-    timestamp: 1755502637
+    timestamp: 1755504694
 

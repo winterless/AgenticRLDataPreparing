@@ -20,7 +20,7 @@
 
 | 脚本 | 主要作用 | 如何泛化 |
 | --- | --- | --- |
-| `build_has_api_script.py` | 逐条遍历函数调用，基于 `random/available/params/param_values` 等策略生成选择题，需要 `function_meta.json` 提供参数 schema。 | 任何包含 `messages[*].function_call` 的数据集都可直接使用；若字段名不同，重写 `_parse_arguments` 或对应题目构造函数。 |
+| `build_has_api_script.py` | 逐条遍历函数调用，基于 `available/params/param_values` 等策略生成选择题（`available` 会自动混入语义干扰项），需要 `function_meta.json` 提供参数 schema。 | 任何包含 `messages[*].function_call` 的数据集都可直接使用；若字段名不同，重写 `_parse_arguments` 或对应题目构造函数。 |
 | `batch_generate.py` | 批量驱动器：可并行运行 `build_has_api_script.py`、可选 pretty 打印、复制原始文件等。 | 调整默认路径或通过 CLI 覆盖，即可用于其它数据目录的批量处理。 |
 | `build_has_api_prompt.py` | 调用 LLM（vLLM/OpenAI API）回放对话，自动合成 `question_param_values` 题目，并在落盘前校验 JSON。 | 只要 jsonl 中包含 `messages` 与 `function_call.arguments`，即可直接使用；若字段/模型不同，修改 prompt 构造和 `--model` 参数即可。 |
 
@@ -43,11 +43,11 @@
 
 2. **Tool declare 与系统上下文**  
    - 写出 `System tool declare:`，内容来自原始 `messages` 中的 system/tool_declare 区块。  
-   - 若 `api_random` 生成了新的候选项，只需在 `工具清单`/`tool declare` 中补充对应描述即可（可选），但数量控制在 1~2 个，避免过度拉长样本。
+   - `api_available` 已内建额外的干扰工具，如需让模型在“工具清单/tool declare”阶段也看到这些假候选，可选择性补充 1~2 条描述，避免上下文过长。
 
 3. **Messages 顺序展开**  
    - 依次输出 user / assistant / function 消息。  
-   - 当 assistant 准备执行 `function_call` 时，**在公布 call 参数之前**插入全部与该 `message_index` 相关的 MCQ，顺序固定为 `api_random → api_available → api_params → api_param_values`，缺失则跳过。  
+   - 当 assistant 准备执行 `function_call` 时，**在公布 call 参数之前**插入全部与该 `message_index` 相关的 MCQ，顺序固定为 `api_available → api_params → api_param_values`，缺失则跳过。
    - 每道题使用简短的结构化提示，例如：
      ```
      [MCQ:param_values|function=ipma-weather-data-server-get_weather_forecast|msg=4]

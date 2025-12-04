@@ -16,10 +16,11 @@ python scripts/analysis/pretty_toucan.py -i data/toucan.jsonl -n 1 > data/toucan
 python scripts/analysis/function_stats.py -i Toucan-1.5M/Toucan-1.5M -o stats/function_stats.csv --meta-output stats/function_stats.json --workers 32
 # build parameter pool for param_values mode
 python scripts/data_preprocess/build_param_pool.py -i Toucan-1.5M/Toucan-1.5M -s stats/function_stats.json -o stats/param_pool.json --workers 16
-# generate api options (random/available/params/param_values)
-python scripts/build_has/build_has_api_script.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_api_random.jsonl --mode param_values --negatives 5 --max-samples 200 --param-pool stats/param_pool.json
+# generate api options (available/params/param_values)
+python scripts/build_has/build_has_api_script.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_api_available.jsonl --mode available --negatives 9 --max-samples 200
+python scripts/build_has/build_has_api_script.py -i data/toucan_1000.jsonl -s stats/function_stats.json -o data/has_api_param_values.jsonl --mode param_values --negatives 5 --max-samples 200 --param-pool stats/param_pool.json
 # batch generate options (script-based param_values uses param_pool)
-python scripts/build_has/batch_generate.py -i Toucan-1.5M/Toucan-1.5M -o data/Toucan-1.5M-generate -s stats/function_stats.json --workers 8 --param-pool stats/param_pool.json
+python scripts/build_has/batch_generate.py -i Toucan-1.5M/Toucan-1.5M -o data/Toucan-1.5M-generate -s stats/function_stats.json --workers 32 --param-pool stats/param_pool.json
 # batch generate prompt-based param_values (串行执行)
 python scripts/build_has/batch_generate.py -i Toucan-1.5M/Toucan-1.5M -o data/has_prompt_batch -s stats/function_stats.json --prompt-mode --prompt-limit 10 --prompt-temperature 0.4 --prompt-max-tokens 512
 # prompt-based question_param_values (Toucan-driven)
