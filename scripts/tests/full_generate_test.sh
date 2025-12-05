@@ -36,7 +36,4 @@ python scripts/build_has/batch_generate.py \
 --workers 32 \
 --param-pool stats/param_pool.json
 
-python scripts/data_postprocess/assemble_toucan.py \
--i Toucan-1.5M/Toucan-1.5M \
--m data/Toucan-1.5M-generate \
---workers 32
+python scripts/data_postprocess/assemble_toucan.py -i data/Toucan-1.5M-obf -m data/Toucan-1.5M-generate --workers 16

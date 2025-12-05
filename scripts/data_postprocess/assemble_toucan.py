@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -26,7 +26,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
-from scripts.data_postprocess.render_toucan_text import convert_jsonl_to_txt  # noqa: E402
 from scripts.utils.has_utils import load_jsonl, parse_arguments  # noqa: E402
 
 MODE_ORDER = ("available", "params", "param_values")
@@ -42,8 +41,6 @@ class BatchJob:
     param_values: Path
     output: Path
     text_output: Path | None
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stitch Toucan trajectories with MCQs.")
     parser.add_argument(
@@ -92,8 +89,6 @@ def load_records(path: Path) -> list[dict]:
     if isinstance(data, list):
         return data
     raise ValueError(f"Unsupported JSON structure in {path}")
-
-
 def build_mcq_index(paths: Iterable[Path | None]):
     index: dict[str, dict[int, dict[str, list[dict]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
@@ -354,9 +349,11 @@ def assemble_to_outputs(
     to_emit = records
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    text_fh = text_path.open("w", encoding="utf-8") if text_path else None
+    text_fh = (
+        text_path.open("w", encoding="utf-8", errors="surrogatepass") if text_path else None
+    )
     try:
-        with output_path.open("w", encoding="utf-8") as fh:
+        with output_path.open("w", encoding="utf-8", errors="surrogatepass") as fh:
             for record in to_emit:
                 base_text = assemble_record(
                     record, mcq_index, reveal_answers, show_function_name
@@ -449,7 +446,7 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
     print(f"[INFO] Launching batch assembly for {len(jobs)} files (workers={max_workers}).")
     successes = 0
     failures = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_map = {
             executor.submit(
                 assemble_to_outputs,
