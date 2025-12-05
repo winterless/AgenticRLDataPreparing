@@ -3,7 +3,7 @@
 Make Toucan jsonl file human readable
 
 Example:
-    python scripts/analysis/pretty_toucan.py -i data/toucan.jsonl -n 1 > data/toucan.txt
+    python scripts/analysis/pretty_toucan.py -i data/demo/toucan.jsonl -n 1 > data/demo/toucan.txt
 """
 
 import argparse

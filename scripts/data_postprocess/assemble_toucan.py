@@ -13,6 +13,8 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -24,70 +26,50 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
+from scripts.data_postprocess.render_toucan_text import convert_jsonl_to_txt  # noqa: E402
 from scripts.utils.has_utils import load_jsonl, parse_arguments  # noqa: E402
-from scripts.data_postprocess.render_toucan_text import (  # noqa: E402
-    convert_jsonl_to_txt,
-)
 
 MODE_ORDER = ("available", "params", "param_values")
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
+@dataclass(frozen=True)
+class BatchJob:
+    prefix: str
+    conversation: Path
+    available: Path
+    params: Path
+    param_values: Path
+    output: Path
+    text_output: Path | None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stitch Toucan trajectories with MCQs.")
     parser.add_argument(
-        "--data-dir",
+        "-i",
+        "--conv-root",
         type=Path,
         default=REPO_ROOT / "data",
-        help="Directory containing toucan*.json(l) files (default: data/).",
+        help="Root directory containing raw conversation json/jsonl files (default: data/).",
     )
     parser.add_argument(
-        "--conversation",
+        "-m",
+        "--mcq-root",
         type=Path,
         default=None,
-        help="Path to the obfuscated trajectory json/jsonl (default: data/toucan.jsonl).",
+        help="Root directory containing *_api_*.jsonl MCQ files (default: same as --conv-root).",
     )
     parser.add_argument(
-        "--mcq-available",
-        type=Path,
-        default=None,
-        help="Path to available-mode MCQ jsonl (default: data/toucan_api_available.jsonl).",
-    )
-    parser.add_argument(
-        "--mcq-params",
-        type=Path,
-        default=None,
-        help="Path to params-mode MCQ jsonl (default: data/toucan_api_params.jsonl).",
-    )
-    parser.add_argument(
-        "--mcq-param-values",
-        type=Path,
-        default=None,
-        help="Path to param_values-mode MCQ jsonl (default: data/toucan_api_param_values.jsonl).",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=REPO_ROOT / "data" / "toucan_mcq_assembled.jsonl",
-        help="Output path for assembled JSONL (default: data/toucan_mcq_assembled.jsonl).",
-    )
-    parser.add_argument(
-        "--text-output",
-        type=Path,
-        default=None,
-        help="Optional pretty text output path (default: same as --output but .txt).",
+        "--workers",
+        type=int,
+        default=4,
+        help="Max worker threads when assembling multiple files (default: 4).",
     )
     parser.add_argument(
         "--no-text-output",
         action="store_true",
-        help="Skip emitting the pretty text companion file.",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Optional cap on number of records to materialize.",
+        help="Skip emitting the pretty text companion files.",
     )
     parser.add_argument(
         "--reveal-answers",
@@ -100,14 +82,6 @@ def parse_args() -> argparse.Namespace:
         help="Include the target function name in MCQ headers (default hides it).",
     )
     return parser.parse_args()
-
-
-def pick_default(data_dir: Path, stem: str) -> Path | None:
-    for suffix in (".jsonl", ".json"):
-        candidate = data_dir / f"{stem}{suffix}"
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def load_records(path: Path) -> list[dict]:
@@ -354,59 +328,167 @@ def assemble_record(record: dict, mcqs, reveal_answer: bool, show_function_name:
     return "\n".join(parts).strip() + "\n"
 
 
-def main():
-    args = parse_args()
-    conversation_path = args.conversation or pick_default(args.data_dir, "toucan")
-    available_path = args.mcq_available or pick_default(args.data_dir, "toucan_api_available")
-    params_path = args.mcq_params or pick_default(args.data_dir, "toucan_api_params")
-    param_values_path = args.mcq_param_values or pick_default(
-        args.data_dir, "toucan_api_param_values"
-    )
-
-    if not conversation_path or not conversation_path.exists():
-        raise SystemExit("Conversation json/jsonl not found; specify --conversation.")
+def assemble_to_outputs(
+    conversation_path: Path,
+    available_path: Path,
+    params_path: Path,
+    param_values_path: Path,
+    output_path: Path,
+    text_path: Path | None,
+    reveal_answers: bool,
+    text_reveal_answers: bool,
+    show_function_name: bool,
+) -> tuple[int, int]:
+    if not conversation_path.exists():
+        raise FileNotFoundError(f"Conversation file missing: {conversation_path}")
     for label, path in [
         ("available", available_path),
         ("params", params_path),
         ("param_values", param_values_path),
     ]:
         if not path or not path.exists():
-            raise SystemExit(f"{label} MCQ file missing; pass --mcq-{label.replace('_', '-')}.")
+            raise FileNotFoundError(f"{label} MCQ missing: {path}")
 
     records = load_records(conversation_path)
     mcq_index, mcq_total = build_mcq_index([available_path, params_path, param_values_path])
+    to_emit = records
 
-    to_emit = records[: args.limit] if args.limit else records
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    text_path = None
-    if not args.no_text_output:
-        if args.text_output:
-            text_path = args.text_output
-        elif args.output.suffix:
-            text_path = args.output.with_suffix(".txt")
-        else:
-            text_path = args.output.with_name(args.output.name + ".txt")
-        text_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    text_fh = text_path.open("w", encoding="utf-8") if text_path else None
+    try:
+        with output_path.open("w", encoding="utf-8") as fh:
+            for record in to_emit:
+                base_text = assemble_record(
+                    record, mcq_index, reveal_answers, show_function_name
+                )
+                payload = {
+                    "uuid": record.get("uuid") or record.get("record_uuid"),
+                    "text": base_text,
+                }
+                fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
-    with args.output.open("w", encoding="utf-8") as fh:
-        for record in to_emit:
-            text = assemble_record(
-                record, mcq_index, args.reveal_answers, args.show_function_name
-            )
-            payload = {
-                "uuid": record.get("uuid") or record.get("record_uuid"),
-                "text": text,
-            }
-            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                if text_fh:
+                    pretty_text = (
+                        base_text
+                        if text_reveal_answers == reveal_answers
+                        else assemble_record(
+                            record, mcq_index, text_reveal_answers, show_function_name
+                        )
+                    )
+                    text_fh.write(pretty_text)
+                    if not pretty_text.endswith("\n"):
+                        text_fh.write("\n")
+                    text_fh.write("\n")
+    finally:
+        if text_fh:
+            text_fh.close()
 
-    if text_path:
-        convert_jsonl_to_txt(args.output, text_path, args.limit)
+    return len(to_emit), mcq_total
 
-    text_msg = f" and {text_path}" if text_path else ""
-    print(
-        f"[INFO] Wrote {len(to_emit)} assembled samples to {args.output}{text_msg}. "
-        f"MCQ entries consumed: {mcq_total}."
+
+def discover_batch_jobs(
+    conv_root: Path, mcq_root: Path, include_text: bool
+) -> tuple[list[BatchJob], list[str]]:
+    jobs: list[BatchJob] = []
+    warnings: list[str] = []
+    conversation_files = sorted(
+        p
+        for p in conv_root.rglob("*.json*")
+        if p.is_file()
+        and p.suffix in {".json", ".jsonl"}
+        and not p.name.endswith("_mcq_assembled.jsonl")
+        and "_api_" not in p.stem
     )
+    for conv_path in conversation_files:
+        try:
+            rel = conv_path.relative_to(conv_root)
+        except ValueError:
+            # Should not happen, but skip just in case.
+            continue
+        prefix = conv_path.stem
+        mcq_dir = (mcq_root / rel.parent).resolve()
+        available = mcq_dir / f"{prefix}_api_available.jsonl"
+        params = mcq_dir / f"{prefix}_api_params.jsonl"
+        param_values = mcq_dir / f"{prefix}_api_param_values.jsonl"
+        missing = [path for path in (available, params, param_values) if not path.exists()]
+        if missing:
+            warnings.append(
+                f"[WARN] Skip '{prefix}' (relative {rel}) because missing: "
+                + ", ".join(str(m) for m in missing)
+            )
+            continue
+        text_output = (mcq_dir / f"{prefix}_mcq_assembled.txt") if include_text else None
+        jobs.append(
+            BatchJob(
+                prefix=prefix,
+                conversation=conv_path,
+                available=available,
+                params=params,
+                param_values=param_values,
+                output=mcq_dir / f"{prefix}_mcq_assembled.jsonl",
+                text_output=text_output,
+            )
+        )
+    return jobs, warnings
+
+
+def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None:
+    if not conv_root.exists() or not conv_root.is_dir():
+        raise SystemExit(f"Conversation root not found: {conv_root}")
+    if not mcq_root.exists() or not mcq_root.is_dir():
+        raise SystemExit(f"MCQ root not found: {mcq_root}")
+
+    jobs, warnings = discover_batch_jobs(conv_root, mcq_root, not args.no_text_output)
+    for msg in warnings:
+        print(msg)
+    if not jobs:
+        print("[INFO] No valid conversation/MCQ combinations discovered; nothing to do.")
+        return
+
+    max_workers = max(1, args.workers or 1)
+    print(f"[INFO] Launching batch assembly for {len(jobs)} files (workers={max_workers}).")
+    successes = 0
+    failures = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(
+                assemble_to_outputs,
+                job.conversation,
+                job.available,
+                job.params,
+                job.param_values,
+                job.output,
+                job.text_output,
+                args.reveal_answers,
+                True,
+                args.show_function_name,
+            ): job
+            for job in jobs
+        }
+        for future in as_completed(future_map):
+            job = future_map[future]
+            try:
+                count, mcq_total = future.result()
+            except Exception as exc:
+                failures += 1
+                print(f"[ERROR] Failed to assemble '{job.prefix}' ({job.conversation}): {exc}")
+            else:
+                successes += 1
+                text_msg = f" + {job.text_output}" if job.text_output else ""
+                print(
+                    f"[INFO] Built {job.output}{text_msg} | records={count}, mcq_entries={mcq_total}"
+                )
+
+    print(
+        f"[INFO] Batch complete. Successful: {successes}. Failed: {failures}. Total: {len(jobs)}."
+    )
+
+
+def main():
+    args = parse_args()
+    conv_root = args.conv_root
+    mcq_root = args.mcq_root or conv_root
+    run_batch(conv_root, mcq_root, args)
 
 
 if __name__ == "__main__":

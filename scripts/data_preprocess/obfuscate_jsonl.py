@@ -4,8 +4,8 @@ Rewrite jsonl data so that all function names are replaced by aliases.
 
 Example:
     python scripts/data_preprocess/obfuscate_jsonl.py \
-        -i data/toucan2_raw.jsonl \
-        -o data/toucan2.jsonl \
+        -i data/demo/toucan_raw.jsonl \
+        -o data/demo/toucan.jsonl \
         --alias stats/function_alias.json
 """
 

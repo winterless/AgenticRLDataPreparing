@@ -1,7 +1,7 @@
 ## HAS 数据构造流程（概览）
 
 1. **原始数据准备**
-   - 使用 `generate_toucan.py` 抽取 parquet → jsonl：  
+   - 使用 `generate_toucan.py` 抽取 parquet → jsonl：
    - 数据清洗（分类，扩展节点，过滤回话，基于阈值等清洗）：暂未进行
 
 2. **轨迹数据混淆**
@@ -27,7 +27,7 @@
 | `analysis/` | 统计与可视化，构建 alias map、生成可读文本 | `function_stats.py`, `pretty_toucan.py` |
 | `build_has/` | HAS-API 题目生成（脚本/Prompt）及批处理 | `build_has_api_script.py`, `build_has_api_prompt.py`, `batch_generate.py` |
 
-> `data/generate.sh` 封装了下述流程，可通过 `regenerate=true` 控制是否重跑全量统计与混淆。
+> `data/demo/` 目录内提供了一份最小可跑的样例（`toucan*.jsonl` 及组装结果），下文所有 “single” 命令默认输出到该目录，便于快速验证。
 
 ---
 
@@ -45,7 +45,12 @@ python scripts/data_preprocess/generate_toucan.py \
   -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
   --sample-size 1 \
   --seed 23 \
-  -o data/toucan_raw.jsonl
+ -o data/demo/toucan_raw.jsonl
+
+# single
+python scripts/analysis/pretty_toucan.py \
+ -i data/demo/toucan_raw.jsonl \
+ -n 1 > data/demo/toucan.txt
 ```
 
 ### 2. 构建 function_stats + alias map（首次或需要重建时）
@@ -72,8 +77,8 @@ python scripts/data_preprocess/obfuscate_jsonl.py \
 
 # single
 python scripts/data_preprocess/obfuscate_jsonl.py \
-  -i data/toucan_raw.jsonl \
-  -o data/toucan.jsonl \
+ -i data/demo/toucan_raw.jsonl \
+ -o data/demo/toucan.jsonl \
   --alias stats/function_alias.json
 ```
 
@@ -101,27 +106,27 @@ python scripts/data_preprocess/build_param_pool.py \
 # available 模式（整合 random 逻辑、函数名仅输出 alias）
 # signle
 python scripts/build_has/build_has_api_script.py \
-  -i data/toucan.jsonl \
+  -i data/demo/toucan.jsonl \
   -s stats/function_stats.json \
-  -o data/toucan_api_available.jsonl \
+  -o data/demo/toucan_api_available.jsonl \
   --mode available \
   --negatives 12
 
 # params 模式（必填参数判断）
 # single
 python scripts/build_has/build_has_api_script.py \
-  -i data/toucan.jsonl \
+  -i data/demo/toucan.jsonl \
   -s stats/function_stats.json \
-  -o data/toucan_api_params.jsonl \
+  -o data/demo/toucan_api_params.jsonl \
   --mode params \
   --negatives 5
 
 # param_values 模式（真实参数池 + 干扰项）
 # single
 python scripts/build_has/build_has_api_script.py \
-  -i data/toucan.jsonl \
+  -i data/demo/toucan.jsonl \
   -s stats/function_stats.json \
-  -o data/toucan_api_param_values.jsonl \
+  -o data/demo/toucan_api_param_values.jsonl \
   --mode param_values \
   --negatives 5 \
   --param-pool stats/param_pool.json
@@ -153,10 +158,9 @@ python scripts/build_has/batch_generate.py \
 # 单文件 prompt 生成（调试 / 小样本）
 # online
 python scripts/build_has/build_has_api_prompt.py \
-  -i data/toucan_1000.jsonl \
+  -i data/demo/toucan.jsonl \
   -s stats/function_stats.json \
-  -o data/has_prompt_toucan.jsonl \
-  --limit 200 \
+  -o data/demo/has_prompt_toucan.jsonl \
   --temperature 0.4 \
   --max-tokens 512
 ```
@@ -231,9 +235,18 @@ python scripts/build_has/build_has_api_prompt.py \
 
 ---
 
-## 数据拼装（轨迹 + MCQ）doing
+## 数据拼装（轨迹 + MCQ）
 
-在训练阶段会把“原始轨迹 + MCQ”串成一条文本样本（详见 `scripts/ARCHITECTURE.md` 第 5 节）。关键规则：
+`scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan` 样例，可直接运行：
+
+```bash
+python scripts/data_postprocess/assemble_toucan.py \
+  -i data/demo \
+  -m data/demo
+```
+> JSONL 输出默认不展示答案以避免训练泄露，但配套的 `.txt` 可读版始终附带 `Answer: the answer is ...`，方便人工校验。需要隐藏答案时，可手动打开 `--no-text-output`。
+
+拼装规则如下：
 
 1. 开头写 `Question:`、`工具清单：`，需要注入这个轨迹对应MCP文件中的假工具，工具乱序。
 2. `System tool declare:` 来自原始 `messages` 中 system/tool_declare，需要注入这个轨迹对应MCP文件中的假工具，工具乱序。
@@ -251,6 +264,25 @@ python scripts/build_has/build_has_api_prompt.py \
 6. 轨迹结束后补 `Target tools:`、`Question quality assessment:`、`Response quality assessment:`、`Metadata:`。
 
 该流程确保模型既能看到完整对话，又能学习多项选择题，不暴露答案。更多细节、字段含义及 concat 规划请参考 `scripts/ARCHITECTURE.md`。
+
+运行脚本示例：
+```bash
+# 自动批量：-i 指向原始轨迹根目录，-m 指向 MCQ 根目录（可与 -i 相同）
+# single
+python scripts/data_postprocess/assemble_toucan.py \
+  -i data/demo \
+  -m data/demo
+
+# full
+python scripts/data_postprocess/assemble_toucan.py \
+  -i Toucan-1.5M/Toucan-1.5M \
+  -m data/Toucan-1.5M-generate \
+  --workers 32
+
+# 若仅想生成单个样本，可在准备好该前缀的四个文件后，把它们放进各自目录再运行同一命令；
+# 脚本会自动发现拥有完整 *_api_available/params/param_values 的前缀，仅对这些前缀输出
+```
+> 默认不展示 MCQ 正确答案，可通过 `--reveal-answers` 临时揭示；若需调整人类可读文件路径或关闭输出，可分别使用 `--text-output path/to/file.txt` 与 `--no-text-output`。
 
 ## 测试
 - **测试脚本生成（自动同步 README 标签）**
