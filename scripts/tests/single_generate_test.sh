@@ -4,7 +4,7 @@ set -euo pipefail
 python scripts/data_preprocess/generate_toucan.py \
 -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
 --sample-size 1 \
---seed 23 \
+--seed 24 \
 -o data/demo/toucan_raw.jsonl
 
 python scripts/analysis/pretty_toucan.py \

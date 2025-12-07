@@ -355,9 +355,7 @@ def assemble_to_outputs(
     try:
         with output_path.open("w", encoding="utf-8", errors="surrogatepass") as fh:
             for record in to_emit:
-                base_text = assemble_record(
-                    record, mcq_index, reveal_answers, show_function_name
-                )
+                base_text = assemble_record(record, mcq_index, reveal_answers, show_function_name)
                 payload = {
                     "uuid": record.get("uuid") or record.get("record_uuid"),
                     "text": base_text,

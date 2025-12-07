@@ -42,21 +42,75 @@ if hasattr(sys, "set_int_max_str_digits"):
         pass
 
 
+def _extract_tool_declare_names(content: str) -> list[str]:
+    """Parse <|im_system|>tool_declare payload and return tool function names."""
+    marker = "<|im_middle|>"
+    end_tag = "<|im_end|>"
+    start = content.find(marker)
+    if start == -1:
+        return []
+    start_payload = start + len(marker)
+    end_payload = content.find(end_tag, start_payload)
+    if end_payload == -1:
+        return []
+    raw_payload = content[start_payload:end_payload].strip()
+    candidates = [raw_payload]
+    try:
+        candidates.append(bytes(raw_payload, "utf-8").decode("unicode_escape"))
+    except Exception:
+        pass
+    for payload in candidates:
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        names: list[str] = []
+        if isinstance(data, list):
+            for tool in data:
+                func = tool.get("function") if isinstance(tool, dict) else None
+                if isinstance(func, dict) and func.get("name"):
+                    names.append(func["name"])
+        if names:
+            return names
+    return []
+
+
 def parse_available_tools(record: dict) -> list[str]:
     tools = record.get("available_tools")
     if tools is None:
-        return []
+        tools = []
     if isinstance(tools, str):
         try:
             tools = json.loads(tools)
         except json.JSONDecodeError:
-            return []
-    names = []
+            tools = []
+    names: list[str] = []
     for tool in tools or []:
         func = tool.get("function") or {}
         if func.get("name"):
             names.append(func["name"])
-    return names
+    messages = record.get("messages")
+    if isinstance(messages, str):
+        try:
+            messages = json.loads(messages)
+        except json.JSONDecodeError:
+            messages = []
+    if isinstance(messages, list):
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "system":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and "<|im_system|>tool_declare" in content:
+                names.extend(_extract_tool_declare_names(content))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for n in names:
+        if n and n not in seen:
+            seen.add(n)
+            deduped.append(n)
+    return deduped
 
 
 def _function_family(name: str) -> str:

@@ -92,10 +92,22 @@ def mask_messages(record: dict, alias_map: dict[str, str]) -> None:
             if role in {"function", "tool"} and msg.get("name"):
                 msg["name"] = apply_alias(msg["name"], alias_map)
             if msg.get("role") == "system" and isinstance(msg.get("content"), str):
-                msg["content"] = obfuscate_tool_declare(msg["content"], alias_map)
+                content = msg["content"]
+                content = obfuscate_tool_declare(content, alias_map)
+                content = obfuscate_tools_listing(content, alias_map)
+                msg["content"] = content
             fc = msg.get("function_call")
             if isinstance(fc, dict) and fc.get("name"):
                 fc["name"] = apply_alias(fc["name"], alias_map)
+            tool_calls = msg.get("tool_calls")
+            tc_obj, tc_was_string = parse_json_field(tool_calls)
+            if isinstance(tc_obj, list):
+                for tc in tc_obj:
+                    func = tc.get("function")
+                    if isinstance(func, dict) and func.get("name"):
+                        func["name"] = apply_alias(func["name"], alias_map)
+            if tool_calls is not None:
+                msg["tool_calls"] = dump_json_field(tc_obj, tc_was_string)
     record["messages"] = dump_json_field(messages, was_string)
 
 
@@ -126,13 +138,34 @@ def mask_metadata(record: dict, alias_map: dict[str, str]) -> None:
     record["metadata"] = dump_json_field(meta_obj, was_string)
 
 
+def _replace_text_alias(value, original: str | None, alias: str | None):
+    """Replace occurrences of the original function name inside MCQ-style text."""
+    if not original or not alias or original == alias:
+        return value
+    if isinstance(value, str):
+        return value.replace(original, alias)
+    if isinstance(value, list):
+        return [_replace_text_alias(v, original, alias) for v in value]
+    return value
+
+
 def mask_record(record: dict, alias_map: dict[str, str]) -> dict:
     mask_available(record, alias_map)
     mask_messages(record, alias_map)
     mask_target_tools(record, alias_map)
     mask_metadata(record, alias_map)
-    if record.get("function_name"):
-        record["function_name"] = apply_alias(record["function_name"], alias_map)
+    original_fn = record.get("function_name")
+    aliased_fn = apply_alias(original_fn, alias_map) if original_fn else None
+    if original_fn:
+        record["function_name"] = aliased_fn
+        # Also obfuscate textual mentions in MCQ-style fields so names never leak.
+        for key in ("question", "answer"):
+            if key in record:
+                record[key] = _replace_text_alias(record[key], original_fn, aliased_fn)
+        if "options" in record:
+            record["options"] = _replace_text_alias(
+                record.get("options"), original_fn, aliased_fn
+            )
     return record
 
 
@@ -164,6 +197,52 @@ def obfuscate_tool_declare(content: str, alias_map: dict[str, str]) -> str:
             encoded = json.dumps(data, ensure_ascii=False)
             return content[:start_payload] + encoded + content[end_payload:]
     return content
+
+
+TOOLS_BLOCK_START = "<tools>"
+TOOLS_BLOCK_END = "</tools>"
+
+
+def obfuscate_tools_listing(content: str, alias_map: dict[str, str]) -> str:
+    """Replace raw function names that appear inside <tools>...</tools> sections."""
+    search_pos = 0
+    while True:
+        start = content.find(TOOLS_BLOCK_START, search_pos)
+        if start == -1:
+            break
+        block_start = start + len(TOOLS_BLOCK_START)
+        end = content.find(TOOLS_BLOCK_END, block_start)
+        if end == -1:
+            break
+        block = content[block_start:end]
+        rewritten = _rewrite_tools_block(block, alias_map)
+        content = content[:block_start] + rewritten + content[end:]
+        search_pos = block_start + len(rewritten) + len(TOOLS_BLOCK_END)
+    return content
+
+
+def _rewrite_tools_block(block: str, alias_map: dict[str, str]) -> str:
+    lines = block.splitlines()
+    rewritten: list[str] = []
+    for line in lines:
+        rewritten.append(_rewrite_tool_line(line, alias_map))
+    return "\n".join(rewritten)
+
+
+def _rewrite_tool_line(line: str, alias_map: dict[str, str]) -> str:
+    stripped = line.strip()
+    if not stripped:
+        return line
+    try:
+        obj = json.loads(stripped)
+    except json.JSONDecodeError:
+        return line
+    func = obj.get("function")
+    if isinstance(func, dict) and func.get("name"):
+        func["name"] = apply_alias(func["name"], alias_map)
+    prefix_len = len(line) - len(line.lstrip())
+    prefix = line[:prefix_len]
+    return prefix + json.dumps(obj, ensure_ascii=False)
 
 
 def parse_args() -> argparse.Namespace:
