@@ -138,7 +138,7 @@ python scripts/build_has/build_has_api_script.py \
 # 批量脚本模式（支持 available/params/param_values 并行生成）
 # full
 python scripts/build_has/batch_generate.py \
-  -i Toucan-1.5M/Toucan-1.5M \
+  -i data/Toucan-1.5M-obf \
   -o data/Toucan-1.5M-generate \
   -s stats/function_stats.json \
   --workers 32 \
@@ -147,7 +147,7 @@ python scripts/build_has/batch_generate.py \
 # 批量 prompt 模式（串行执行，适合小规模产出）
 # online
 python scripts/build_has/batch_generate.py \
-  -i Toucan-1.5M/Toucan-1.5M \
+  -i data/Toucan-1.5M-obf \
   -o data/has_prompt_batch \
   -s stats/function_stats.json \
   --prompt-mode \
