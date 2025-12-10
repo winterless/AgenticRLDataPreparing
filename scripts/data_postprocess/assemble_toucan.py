@@ -349,18 +349,29 @@ def assemble_to_outputs(
     to_emit = records
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    text_fh = (
-        text_path.open("w", encoding="utf-8", errors="surrogatepass") if text_path else None
-    )
+    # Strict UTF-8 writes; skip any record that cannot be encoded.
+    text_fh = text_path.open("w", encoding="utf-8") if text_path else None
+    kept = 0
+    dropped_jsonl = 0
+    dropped_text = 0
     try:
-        with output_path.open("w", encoding="utf-8", errors="surrogatepass") as fh:
+        with output_path.open("w", encoding="utf-8") as fh:
             for record in to_emit:
                 base_text = assemble_record(record, mcq_index, reveal_answers, show_function_name)
                 payload = {
                     "uuid": record.get("uuid") or record.get("record_uuid"),
                     "text": base_text,
                 }
-                fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                try:
+                    fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    kept += 1
+                except UnicodeEncodeError:
+                    dropped_jsonl += 1
+                    print(
+                        f"[WARN] Dropped non-UTF-8 jsonl line (uuid={payload['uuid']}, file={conversation_path})",
+                        file=sys.stderr,
+                    )
+                    continue
 
                 if text_fh:
                     pretty_text = (
@@ -370,15 +381,31 @@ def assemble_to_outputs(
                             record, mcq_index, text_reveal_answers, show_function_name
                         )
                     )
-                    text_fh.write(pretty_text)
-                    if not pretty_text.endswith("\n"):
+                    try:
+                        text_fh.write(pretty_text)
+                        if not pretty_text.endswith("\n"):
+                            text_fh.write("\n")
                         text_fh.write("\n")
-                    text_fh.write("\n")
+                    except UnicodeEncodeError:
+                        dropped_text += 1
+                        print(
+                            f"[WARN] Dropped non-UTF-8 text line (uuid={payload['uuid']}, file={conversation_path})",
+                            file=sys.stderr,
+                        )
+                        # Skip text for this record, continue with next
+                        continue
     finally:
         if text_fh:
             text_fh.close()
 
-    return len(to_emit), mcq_total
+    if dropped_jsonl or dropped_text:
+        print(
+            f"[INFO] {conversation_path.name}: kept {kept}, "
+            f"dropped_jsonl={dropped_jsonl}, dropped_text={dropped_text}",
+            file=sys.stderr,
+        )
+
+    return kept, mcq_total
 
 
 def discover_batch_jobs(
