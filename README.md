@@ -38,14 +38,15 @@
 ```bash
 # full
 python scripts/data_preprocess/generate_toucan.py \
- -i Toucan-1.5M/Toucan-1.5M --workers 32
+ -i Toucan-1.5M/Toucan-1.5M --drop-non-utf8 --workers 32
 
 # single
 python scripts/data_preprocess/generate_toucan.py \
   -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
   --sample-size 1 \
   --seed 23 \
- -o data/demo/toucan_raw.jsonl
+  --drop-non-utf8 \
+  -o data/demo/toucan_raw.jsonl
 
 # single
 python scripts/analysis/pretty_toucan.py \
@@ -237,13 +238,8 @@ python scripts/build_has/build_has_api_prompt.py \
 
 ## 数据拼装（轨迹 + MCQ）
 
-`scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan` 样例，可直接运行：
+`scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan` 
 
-```bash
-python scripts/data_postprocess/assemble_toucan.py \
-  -i data/demo \
-  -m data/demo
-```
 > JSONL 输出默认不展示答案以避免训练泄露，但配套的 `.txt` 可读版始终附带 `Answer: the answer is ...`，方便人工校验。需要隐藏答案时，可手动打开 `--no-text-output`。
 
 拼装规则如下：
@@ -283,6 +279,12 @@ python scripts/data_postprocess/assemble_toucan.py \
 # 脚本会自动发现拥有完整 *_api_available/params/param_values 的前缀，仅对这些前缀输出
 ```
 > 默认不展示 MCQ 正确答案，可通过 `--reveal-answers` 临时揭示；若需调整人类可读文件路径或关闭输出，可分别使用 `--text-output path/to/file.txt` 与 `--no-text-output`。
+
+P.S 清洗数据脚本
+```
+# test
+python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to/dst_dir --workers 8
+```
 
 ## 测试
 - **测试脚本生成（自动同步 README 标签）**

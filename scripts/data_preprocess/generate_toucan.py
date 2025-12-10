@@ -36,6 +36,21 @@ def _iter_records(
             yield record
 
 
+def _dump_row(row: dict, sink, drop_non_utf8: bool) -> bool:
+    """
+    Serialize and write one row. Returns True if written; False if dropped.
+    """
+    try:
+        payload = json.dumps(row, ensure_ascii=False)
+        if drop_non_utf8:
+            payload.encode("utf-8")
+        sink.write(payload)
+        sink.write("\n")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def convert(
     input_path: Path,
     output_path: Path,
@@ -44,11 +59,18 @@ def convert(
     limit: int | None,
     sample_size: int | None,
     seed: int | None,
-) -> Path:
-    """Stream parquet rows into jsonl to avoid loading the whole file."""
+    drop_non_utf8: bool,
+) -> tuple[Path, int, int]:
+    """
+    Stream parquet rows into jsonl to avoid loading the whole file.
+
+    Returns (output_path, kept_lines, dropped_non_utf8_lines).
+    """
     parquet_file = pq.ParquetFile(input_path)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    kept = dropped = 0
 
     if sample_size:
         reservoir: list[dict] = []
@@ -69,18 +91,22 @@ def convert(
                     if j <= cap:
                         reservoir[j - 1] = row
             for row in reservoir:
-                json.dump(row, sink, ensure_ascii=False)
-                sink.write("\n")
+                if _dump_row(row, sink, drop_non_utf8):
+                    kept += 1
+                else:
+                    dropped += 1
     else:
         emitted = 0
         with output_path.open("w", encoding="utf-8") as sink:
             for row in _iter_records(parquet_file, batch_size=batch_size, columns=columns):
                 if limit is not None and emitted >= limit:
                     break
-                json.dump(row, sink, ensure_ascii=False)
-                sink.write("\n")
-                emitted += 1
-    return output_path
+                if _dump_row(row, sink, drop_non_utf8):
+                    emitted += 1
+                    kept += 1
+                else:
+                    dropped += 1
+    return output_path, kept, dropped
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -123,6 +149,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Random seed used for sampling.",
     )
     parser.add_argument(
+        "--drop-non-utf8",
+        action="store_true",
+        help="Skip lines that cannot be encoded as UTF-8 (helps downstream Windows tooling).",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=1,
@@ -161,14 +192,16 @@ def main(argv: list[str]) -> int:
                     args.limit,
                     args.sample_size,
                     args.seed,
+                    args.drop_non_utf8,
                 )
                 future_map[future] = output
             for future in as_completed(future_map):
-                out_path = future.result()
-                print(f"Wrote {out_path}")
+                out_path, kept, dropped = future.result()
+                extra = f", dropped {dropped} non-UTF-8 lines" if dropped else ""
+                print(f"Wrote {out_path} (kept {kept} lines{extra})")
     else:
         output = args.output or args.input.with_suffix(".jsonl")
-        convert(
+        _, kept, dropped = convert(
             args.input,
             output,
             batch_size=args.batch_size,
@@ -176,8 +209,10 @@ def main(argv: list[str]) -> int:
             limit=args.limit,
             sample_size=args.sample_size,
             seed=args.seed,
+            drop_non_utf8=args.drop_non_utf8,
         )
-        print(f"Wrote {output}")  # stdout message for quick confirmation
+        extra = f", dropped {dropped} non-UTF-8 lines" if dropped else ""
+        print(f"Wrote {output} (kept {kept} lines{extra})")  # stdout message for quick confirmation
     return 0
 
 
