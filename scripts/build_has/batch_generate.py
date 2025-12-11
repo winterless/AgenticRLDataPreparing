@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
         help="Desired number of negative options for available/params modes.",
     )
     parser.add_argument(
+        "--negatives-param-values",
+        type=int,
+        default=None,
+        help="Override negative options count for param_values mode (default: reuse --negatives).",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -150,6 +156,7 @@ class JobConfig:
     has_script: Path
     modes: list[str]
     negatives: int
+    negatives_param_values: int | None
     seed: int
     copy_input: bool
     max_samples: int | None
@@ -221,6 +228,9 @@ def process_file(jsonl_path: Path, rel_path: Path, cfg: JobConfig) -> tuple[str,
         else:
             for mode in cfg.modes:
                 api_output = dest_dir / f"{jsonl_path.stem}_api_{mode}.jsonl"
+                negatives = (
+                    cfg.negatives_param_values if mode == "param_values" and cfg.negatives_param_values is not None else cfg.negatives
+                )
                 cmd = [
                     sys.executable,
                     str(cfg.has_script),
@@ -233,7 +243,7 @@ def process_file(jsonl_path: Path, rel_path: Path, cfg: JobConfig) -> tuple[str,
                     "--mode",
                     mode,
                     "--negatives",
-                    str(cfg.negatives),
+                    str(negatives),
                     "--seed",
                     str(cfg.seed),
                 ]
@@ -283,6 +293,7 @@ def main() -> None:
         has_script=BASE_DIR / "scripts" / "build_has" / "build_has_api_script.py",
         modes=args.modes,
         negatives=args.negatives,
+        negatives_param_values=args.negatives_param_values,
         seed=args.seed,
         copy_input=args.copy_input,
         max_samples=args.max_samples,
