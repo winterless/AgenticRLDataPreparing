@@ -36,9 +36,9 @@ LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 class BatchJob:
     prefix: str
     conversation: Path
-    available: Path
-    params: Path
-    param_values: Path
+    available: Path | None
+    params: Path | None
+    param_values: Path | None
     output: Path
     text_output: Path | None
 def parse_args() -> argparse.Namespace:
@@ -69,14 +69,17 @@ def parse_args() -> argparse.Namespace:
         help="Skip emitting the pretty text companion files.",
     )
     parser.add_argument(
-        "--reveal-answers",
-        action="store_true",
-        help="If set, append correct answer text after each MCQ block.",
-    )
-    parser.add_argument(
         "--show-function-name",
         action="store_true",
         help="Include the target function name in MCQ headers (default hides it).",
+    )
+    parser.add_argument(
+        "--passthrough-only",
+        action="store_true",
+        help=(
+            "Do not stitch MCQs; just emit UTF-8 cleaned records/text. "
+            "Useful for ablations or scaling-law runs without MCQ augmentation."
+        ),
     )
     return parser.parse_args()
 
@@ -325,31 +328,37 @@ def assemble_record(record: dict, mcqs, reveal_answer: bool, show_function_name:
 
 def assemble_to_outputs(
     conversation_path: Path,
-    available_path: Path,
-    params_path: Path,
-    param_values_path: Path,
+    available_path: Path | None,
+    params_path: Path | None,
+    param_values_path: Path | None,
     output_path: Path,
     text_path: Path | None,
-    reveal_answers: bool,
-    text_reveal_answers: bool,
     show_function_name: bool,
+    skip_mcq: bool,
 ) -> tuple[int, int]:
     if not conversation_path.exists():
         raise FileNotFoundError(f"Conversation file missing: {conversation_path}")
-    for label, path in [
-        ("available", available_path),
-        ("params", params_path),
-        ("param_values", param_values_path),
-    ]:
-        if not path or not path.exists():
-            raise FileNotFoundError(f"{label} MCQ missing: {path}")
+    if not skip_mcq:
+        for label, path in [
+            ("available", available_path),
+            ("params", params_path),
+            ("param_values", param_values_path),
+        ]:
+            if not path or not path.exists():
+                raise FileNotFoundError(f"{label} MCQ missing: {path}")
 
     records = load_records(conversation_path)
-    mcq_index, mcq_total = build_mcq_index([available_path, params_path, param_values_path])
+    if skip_mcq:
+        mcq_index, mcq_total = {}, 0
+    else:
+        mcq_index, mcq_total = build_mcq_index([available_path, params_path, param_values_path])
     to_emit = records
 
+    # Always reveal answers in both JSONL and TXT outputs.
+    reveal_answers = True
+    text_reveal_answers = True
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Strict UTF-8 writes; skip any record that cannot be encoded.
     text_fh = text_path.open("w", encoding="utf-8") if text_path else None
     kept = 0
     dropped_jsonl = 0
@@ -376,10 +385,8 @@ def assemble_to_outputs(
                 if text_fh:
                     pretty_text = (
                         base_text
-                        if text_reveal_answers == reveal_answers
-                        else assemble_record(
-                            record, mcq_index, text_reveal_answers, show_function_name
-                        )
+                        if text_reveal_answers
+                        else assemble_record(record, mcq_index, text_reveal_answers, show_function_name)
                     )
                     try:
                         text_fh.write(pretty_text)
@@ -392,7 +399,6 @@ def assemble_to_outputs(
                             f"[WARN] Dropped non-UTF-8 text line (uuid={payload['uuid']}, file={conversation_path})",
                             file=sys.stderr,
                         )
-                        # Skip text for this record, continue with next
                         continue
     finally:
         if text_fh:
@@ -407,9 +413,8 @@ def assemble_to_outputs(
 
     return kept, mcq_total
 
-
 def discover_batch_jobs(
-    conv_root: Path, mcq_root: Path, include_text: bool
+    conv_root: Path, mcq_root: Path, include_text: bool, require_mcq: bool
 ) -> tuple[list[BatchJob], list[str]]:
     jobs: list[BatchJob] = []
     warnings: list[str] = []
@@ -433,12 +438,17 @@ def discover_batch_jobs(
         params = mcq_dir / f"{prefix}_api_params.jsonl"
         param_values = mcq_dir / f"{prefix}_api_param_values.jsonl"
         missing = [path for path in (available, params, param_values) if not path.exists()]
-        if missing:
+        if missing and require_mcq:
             warnings.append(
                 f"[WARN] Skip '{prefix}' (relative {rel}) because missing: "
                 + ", ".join(str(m) for m in missing)
             )
             continue
+        if missing and not require_mcq:
+            warnings.append(
+                f"[WARN] Missing MCQs for '{prefix}' (relative {rel}); assembling without MCQs."
+            )
+            available = params = param_values = None
         text_output = (mcq_dir / f"{prefix}_mcq_assembled.txt") if include_text else None
         jobs.append(
             BatchJob(
@@ -454,13 +464,16 @@ def discover_batch_jobs(
     return jobs, warnings
 
 
+
 def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None:
     if not conv_root.exists() or not conv_root.is_dir():
         raise SystemExit(f"Conversation root not found: {conv_root}")
     if not mcq_root.exists() or not mcq_root.is_dir():
         raise SystemExit(f"MCQ root not found: {mcq_root}")
 
-    jobs, warnings = discover_batch_jobs(conv_root, mcq_root, not args.no_text_output)
+    jobs, warnings = discover_batch_jobs(
+        conv_root, mcq_root, not args.no_text_output, require_mcq=not args.passthrough_only
+    )
     for msg in warnings:
         print(msg)
     if not jobs:
@@ -481,9 +494,8 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
                 job.param_values,
                 job.output,
                 job.text_output,
-                args.reveal_answers,
-                True,
                 args.show_function_name,
+                args.passthrough_only,
             ): job
             for job in jobs
         }
@@ -504,7 +516,6 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
     print(
         f"[INFO] Batch complete. Successful: {successes}. Failed: {failures}. Total: {len(jobs)}."
     )
-
 
 def main():
     args = parse_args()

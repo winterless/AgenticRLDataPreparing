@@ -238,9 +238,9 @@ python scripts/build_has/build_has_api_prompt.py \
 
 ## 数据拼装（轨迹 + MCQ）
 
-`scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan` 
+`scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan`
 
-> JSONL 输出默认不展示答案以避免训练泄露，但配套的 `.txt` 可读版始终附带 `Answer: the answer is ...`，方便人工校验。需要隐藏答案时，可手动打开 `--no-text-output`。
+> JSONL/TXT 始终包含正确答案（便于模型学习与人工校验，`Answer: the answer is ...`）。如不需要文本副本可使用 `--no-text-output`。
 
 拼装规则如下：
 
@@ -277,8 +277,18 @@ python scripts/data_postprocess/assemble_toucan.py \
 
 # 若仅想生成单个样本，可在准备好该前缀的四个文件后，把它们放进各自目录再运行同一命令；
 # 脚本会自动发现拥有完整 *_api_available/params/param_values 的前缀，仅对这些前缀输出
+
+# 仅做 UTF-8 严格写出/过滤，不注入 MCQ（用于消融或 scaling law）
+python scripts/data_postprocess/assemble_toucan.py \
+  -i data/Toucan-1.5M-obf \
+  -m data/Toucan-1.5M-generate \
+  --workers 32 \
+  --passthrough-only
 ```
-> 默认不展示 MCQ 正确答案，可通过 `--reveal-answers` 临时揭示；若需调整人类可读文件路径或关闭输出，可分别使用 `--text-output path/to/file.txt` 与 `--no-text-output`。
+> 选项摘要：
+> - `--passthrough-only`：跳过 MCQ 拼装，仅做 UTF-8 严格写出（遇到不可编码的记录逐条丢弃并打印告警），便于消融/对比实验。
+> - `--no-text-output`：只写 jsonl，不写人类可读 txt。
+> - `--show-function-name`：在 MCQ 题头展示函数名（默认隐藏）。
 
 P.S 清洗数据脚本
 ```

@@ -219,29 +219,29 @@ def process_file(jsonl_path: Path, rel_path: Path, cfg: JobConfig) -> tuple[str,
         if cfg.prompt_mode:
             run_prompt_generation(jsonl_path, cfg, dest_dir, log_prefix)
         else:
-        for mode in cfg.modes:
-            api_output = dest_dir / f"{jsonl_path.stem}_api_{mode}.jsonl"
-            cmd = [
-                sys.executable,
-                str(cfg.has_script),
-                "-i",
-                str(jsonl_path),
-                "-s",
-                str(cfg.stats_path),
-                "-o",
-                str(api_output),
-                "--mode",
-                mode,
-                "--negatives",
-                str(cfg.negatives),
-                "--seed",
-                str(cfg.seed),
-            ]
+            for mode in cfg.modes:
+                api_output = dest_dir / f"{jsonl_path.stem}_api_{mode}.jsonl"
+                cmd = [
+                    sys.executable,
+                    str(cfg.has_script),
+                    "-i",
+                    str(jsonl_path),
+                    "-s",
+                    str(cfg.stats_path),
+                    "-o",
+                    str(api_output),
+                    "--mode",
+                    mode,
+                    "--negatives",
+                    str(cfg.negatives),
+                    "--seed",
+                    str(cfg.seed),
+                ]
                 if mode == "param_values" and cfg.param_pool:
                     cmd.extend(["--param-pool", str(cfg.param_pool)])
-            if cfg.max_samples:
-                cmd.extend(["--max-samples", str(cfg.max_samples)])
-            run_command(cmd, log_prefix)
+                if cfg.max_samples:
+                    cmd.extend(["--max-samples", str(cfg.max_samples)])
+                run_command(cmd, log_prefix)
 
         return (log_prefix, True, None)
     except subprocess.CalledProcessError as exc:
