@@ -1,197 +1,255 @@
-## HAS 数据构造流程（概览）
+## 快速开始（推荐）
 
-1. **原始数据准备**
-   - 使用 `generate_toucan.py` 抽取 parquet → jsonl：
-   - 数据清洗（分类，扩展节点，过滤回话，基于阈值等清洗）：暂未进行
+- **同步测试脚本（以 README 为真源）**：
 
-2. **轨迹数据混淆**
-   - 对轨迹中的函数名进行混淆，避免模型通过名称推导
+```bash
+python scripts/tests/generate_test_scripts.py
+```
 
-3. **增强候选选项生成**
-   - 基于函数名选择，函数签名选择，函数参数值选择三项
-   - 在原始轨迹中，插入对应的选择题，结尾衔接答案
+- **跑全量（不依赖 LLM prompt）**：
 
-4. **CPT续训**
+```bash
+./scripts/tests/full_generate_test.sh
+```
 
-5. **候选打分与排序（候选—）**
-   - 通过 GPT / Gemini 评分，保留解释，并以 `state + actions + score` 结构存储。
+- **跑单文件 Demo（不依赖 LLM prompt）**：
 
+```bash
+./scripts/tests/single_generate_test.sh
+```
+
+- **覆盖默认变量**（任意脚本前加环境变量即可）：
+  - 示例：`WORKERS=64 RAW_ROOT=/path/to/data ./scripts/tests/full_generate_test.sh`
 
 ---
 
-## 脚本目录与职责
+## 流程概览（原始轨迹 ➜ 混淆 ➜ MCQ ➜ 组装）
 
-| 目录 | 作用 | 代表脚本 |
-| --- | --- | --- |
-| `data_preprocess/` | parquet ➜ jsonl、构建参数池、批量混淆 | `generate_toucan.py`, `obfuscate_jsonl.py`, `build_param_pool.py` |
-| `analysis/` | 统计与可视化，构建 alias map、生成可读文本 | `function_stats.py`, `pretty_toucan.py` |
-| `build_has/` | HAS-API 题目生成（脚本/Prompt）及批处理 | `build_has_api_script.py`, `build_has_api_prompt.py`, `batch_generate.py` |
+- **生成/准备轨迹**：parquet → jsonl（`generate_toucan.py`）
+- **统计与 alias**：抽取函数签名/元数据、生成 alias（`function_stats.py --alias-output`）
+- **混淆**：用 alias 重写工具/函数名（`obfuscate_jsonl.py`）
+- **基于混淆数据重建统计 + 参数池**（`function_stats.py` + `build_param_pool.py`）
+- **生成 MCQ**（脚本模式：`build_has_api_script.py`；全量批处理：`batch_generate.py`）
+- **组装对话+MCQ**（`assemble_toucan.py`）
 
-> `data/demo/` 目录内提供了一份最小可跑的样例（`toucan*.jsonl` 及组装结果），下文所有 “single” 命令默认输出到该目录，便于快速验证。
+> `data/demo/` 内是最小可跑样例：所有 “single” 默认输出到 `${DEMO_DIR}`。
 
 ---
 
-## 原始轨迹 ➜ 混淆数据 ➜ HAS-API 题库
+## 命令清单（README 为真源，自动生成 `scripts/tests/*_generate_test.sh`）
 
-### 1. 采样一份可控的原始 jsonl（首次或需要重建时）
+下面这段 `bash` 代码块会被 `scripts/tests/generate_test_scripts.py` 解析：
+- `# vars`：会写入生成的 `.sh` 顶部（默认值可被环境变量覆盖）
+- `# full` / `# single`：各自进入对应脚本
+- `# online`：会被跳过（只做文档示例）
+- `# test`：只做说明，不进入脚本
+
+<details>
+<summary>展开：用于自动生成测试脚本的命令（# vars / # full / # single）</summary>
 
 ```bash
+# vars
+WORKERS="${WORKERS:-32}"
+
+# full pipeline roots
+RAW_ROOT="${RAW_ROOT:-Toucan-1.5M/Toucan-1.5M}"
+OBF_ROOT="${OBF_ROOT:-data/Toucan-1.5M-obf}"
+GENERATE_ROOT="${GENERATE_ROOT:-data/Toucan-1.5M-generate}"
+
+# stats outputs
+STATS_DIR="${STATS_DIR:-stats}"
+STATS_RAW_CSV="${STATS_RAW_CSV:-${STATS_DIR}/function_stats_raw.csv}"
+STATS_RAW_JSON="${STATS_RAW_JSON:-${STATS_DIR}/function_stats_raw.json}"
+ALIAS_JSON="${ALIAS_JSON:-${STATS_DIR}/function_alias.json}"
+STATS_CSV="${STATS_CSV:-${STATS_DIR}/function_stats.csv}"
+STATS_JSON="${STATS_JSON:-${STATS_DIR}/function_stats.json}"
+PARAM_POOL="${PARAM_POOL:-${STATS_DIR}/param_pool.json}"
+
+# demo (single) paths
+DEMO_DIR="${DEMO_DIR:-data/demo}"
+DEMO_PARQUET="${DEMO_PARQUET:-Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet}"
+DEMO_RAW_JSONL="${DEMO_RAW_JSONL:-${DEMO_DIR}/toucan_raw.jsonl}"
+DEMO_PRETTY_TXT="${DEMO_PRETTY_TXT:-${DEMO_DIR}/toucan.txt}"
+DEMO_JSONL="${DEMO_JSONL:-${DEMO_DIR}/toucan.jsonl}"
+DEMO_API_AVAILABLE="${DEMO_API_AVAILABLE:-${DEMO_DIR}/toucan_api_available.jsonl}"
+DEMO_API_PARAMS="${DEMO_API_PARAMS:-${DEMO_DIR}/toucan_api_params.jsonl}"
+DEMO_API_PARAM_VALUES="${DEMO_API_PARAM_VALUES:-${DEMO_DIR}/toucan_api_param_values.jsonl}"
+
+# ---------- full: end-to-end (no prompt) ----------
 # full
 python scripts/data_preprocess/generate_toucan.py \
- -i Toucan-1.5M/Toucan-1.5M --drop-non-utf8 --workers 32
+  -i "${RAW_ROOT}" --drop-non-utf8 --workers "${WORKERS}"
 
-# single
-python scripts/data_preprocess/generate_toucan.py \
-  -i Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet \
-  --sample-size 1 \
-  --seed 23 \
-  --drop-non-utf8 \
-  -o data/demo/toucan_raw.jsonl
-
-# single
-python scripts/analysis/pretty_toucan.py \
- -i data/demo/toucan_raw.jsonl \
- -n 1 > data/demo/toucan.txt
-```
-
-### 2. 构建 function_stats + alias map（首次或需要重建时）
-
-```bash
 # full
 python scripts/analysis/function_stats.py \
-  -i Toucan-1.5M/Toucan-1.5M \
-  -o stats/function_stats_raw.csv \
-  --meta-output stats/function_stats_raw.json \
-  --alias-output stats/function_alias.json \
-  --workers 32
-```
+  -i "${RAW_ROOT}" \
+  -o "${STATS_RAW_CSV}" \
+  --meta-output "${STATS_RAW_JSON}" \
+  --alias-output "${ALIAS_JSON}" \
+  --workers "${WORKERS}"
 
-### 3. 使用 alias map 混淆全量数据（首次或需要重建时）
-
-```bash
 # full
 python scripts/data_preprocess/obfuscate_jsonl.py \
-  -i Toucan-1.5M/Toucan-1.5M \
-  -o data/Toucan-1.5M-obf \
-  --alias stats/function_alias.json \
-  --workers 32
+  -i "${RAW_ROOT}" \
+  -o "${OBF_ROOT}" \
+  --alias "${ALIAS_JSON}" \
+  --workers "${WORKERS}"
 
-# single
-python scripts/data_preprocess/obfuscate_jsonl.py \
- -i data/demo/toucan_raw.jsonl \
- -o data/demo/toucan.jsonl \
-  --alias stats/function_alias.json
-```
-
-### 4. 基于混淆数据重建统计与参数池（首次或需要重建时）
-
-```bash
 # full
 python scripts/analysis/function_stats.py \
-  -i data/Toucan-1.5M-obf \
-  -o stats/function_stats.csv \
-  --meta-output stats/function_stats.json \
-  --workers 32
+  -i "${OBF_ROOT}" \
+  -o "${STATS_CSV}" \
+  --meta-output "${STATS_JSON}" \
+  --workers "${WORKERS}"
 
 # full
 python scripts/data_preprocess/build_param_pool.py \
-  -i data/Toucan-1.5M-obf \
-  -s stats/function_stats.json \
-  -o stats/param_pool.json \
-  --workers 32
-```
+  -i "${OBF_ROOT}" \
+  -s "${STATS_JSON}" \
+  -o "${PARAM_POOL}" \
+  --workers "${WORKERS}"
 
-### 5. 生成 HAS-API 选择题（脚本模式）
+# full
+python scripts/build_has/batch_generate.py \
+  -i "${OBF_ROOT}" \
+  -o "${GENERATE_ROOT}" \
+  -s "${STATS_JSON}" \
+  --workers "${WORKERS}" \
+  --param-pool "${PARAM_POOL}"
 
-```bash
-# available 模式（整合 random 逻辑、函数名仅输出 alias）
-# signle
+# full
+python scripts/data_postprocess/assemble_toucan.py \
+  -i "${OBF_ROOT}" \
+  -m "${GENERATE_ROOT}" \
+  --workers "${WORKERS}"
+
+# ---------- single: demo (no prompt) ----------
+# single
+python scripts/data_preprocess/generate_toucan.py \
+  -i "${DEMO_PARQUET}" \
+  --sample-size 1 \
+  --seed 23 \
+  --drop-non-utf8 \
+  -o "${DEMO_RAW_JSONL}"
+
+# single
+python scripts/analysis/pretty_toucan.py \
+  -i "${DEMO_RAW_JSONL}" \
+  -n 1 > "${DEMO_PRETTY_TXT}"
+
+# single
+python scripts/data_preprocess/obfuscate_jsonl.py \
+  -i "${DEMO_RAW_JSONL}" \
+  -o "${DEMO_JSONL}" \
+  --alias "${ALIAS_JSON}"
+
+# single
 python scripts/build_has/build_has_api_script.py \
-  -i data/demo/toucan.jsonl \
-  -s stats/function_stats.json \
-  -o data/demo/toucan_api_available.jsonl \
+  -i "${DEMO_JSONL}" \
+  -s "${STATS_JSON}" \
+  -o "${DEMO_API_AVAILABLE}" \
   --mode available \
   --negatives 12
 
-# params 模式（必填参数判断）
 # single
 python scripts/build_has/build_has_api_script.py \
-  -i data/demo/toucan.jsonl \
-  -s stats/function_stats.json \
-  -o data/demo/toucan_api_params.jsonl \
+  -i "${DEMO_JSONL}" \
+  -s "${STATS_JSON}" \
+  -o "${DEMO_API_PARAMS}" \
   --mode params \
   --negatives 5
 
-# param_values 模式（真实参数池 + 干扰项）
 # single
 python scripts/build_has/build_has_api_script.py \
-  -i data/demo/toucan.jsonl \
-  -s stats/function_stats.json \
-  -o data/demo/toucan_api_param_values.jsonl \
+  -i "${DEMO_JSONL}" \
+  -s "${STATS_JSON}" \
+  -o "${DEMO_API_PARAM_VALUES}" \
   --mode param_values \
   --negatives 5 \
-  --param-pool stats/param_pool.json
-```
+  --param-pool "${PARAM_POOL}"
 
-### 6. 批量生成 / Prompt 生成
+# single
+python scripts/data_postprocess/assemble_toucan.py \
+  -i "${DEMO_DIR}" \
+  -m "${DEMO_DIR}"
 
-```bash
-# 批量脚本模式（支持 available/params/param_values 并行生成）
-# full
-python scripts/build_has/batch_generate.py \
-  -i data/Toucan-1.5M-obf \
-  -o data/Toucan-1.5M-generate \
-  -s stats/function_stats.json \
-  --workers 32 \
-  --param-pool stats/param_pool.json
+# ---------- optional / docs-only ----------
+# test
+python scripts/data_postprocess/assemble_toucan.py \
+  -i "${OBF_ROOT}" \
+  -m "${GENERATE_ROOT}" \
+  --workers "${WORKERS}" \
+  --passthrough-only
 
-# 批量 prompt 模式（串行执行，适合小规模产出）
 # online
 python scripts/build_has/batch_generate.py \
-  -i data/Toucan-1.5M-obf \
+  -i "${OBF_ROOT}" \
   -o data/has_prompt_batch \
-  -s stats/function_stats.json \
+  -s "${STATS_JSON}" \
   --prompt-mode \
   --prompt-limit 10 \
   --prompt-temperature 0.4 \
   --prompt-max-tokens 512
 
-# 单文件 prompt 生成（调试 / 小样本）
 # online
 python scripts/build_has/build_has_api_prompt.py \
-  -i data/demo/toucan.jsonl \
-  -s stats/function_stats.json \
+  -i "${DEMO_JSONL}" \
+  -s "${STATS_JSON}" \
   -o data/demo/has_prompt_toucan.jsonl \
   --temperature 0.4 \
   --max-tokens 512
 ```
 
+</details>
+
 ---
 
-## 脚本分层（详细介绍）
+## 关键脚本与常用参数（速查）
 
-### 1. 数据进入层（`data_preprocess/`）
+- **`scripts/data_preprocess/generate_toucan.py`**：parquet → jsonl
+  - **`-i/--input`**：parquet 文件或目录
+  - **`-o/--output`**：输出 jsonl（不指定时按脚本默认路径）
+  - **`--workers`**：并行度
+  - **`--sample-size` / `--seed`**：抽样（demo 用）
+  - **`--drop-non-utf8`**：过滤不可编码内容
 
-| 脚本 | 主要作用 | 如何泛化 |
-| --- | --- | --- |
-| `generate_toucan.py` | 使用 `pyarrow` 流式读取 parquet 并写出 jsonl，支持列裁剪、行数上限、水库采样，避免整块加载。 | 将 `-i/--input` 指向任意 parquet；若 schema 不同可通过 `--columns` 指定导出字段，输出路径可自定义或沿用默认。 |
-| `obfuscate_jsonl.py` | 根据 alias map 重写 jsonl 中的 `available_tools`、`messages.function_call`、`target_tools`、`metadata` 等字段，只保留混淆名（支持目录并行处理）。 | 结构字段名称不一致时，可调整脚本里的访问逻辑或在运行前自定义转换。 |
-> 若需要在统计之外独立生成 alias map，可继续使用 `build_function_alias.py`（输入仍为 `function_stats_raw.json`）；但日常流程推荐直接通过 `function_stats.py --alias-output` 一并生成。生成后的统计/参数池若需混淆，直接基于混淆版 jsonl 重新跑 `function_stats.py` 与 `build_param_pool.py`，无需额外脚本。
+- **`scripts/analysis/function_stats.py`**：统计函数/工具元数据，可生成 alias
+  - **`-i`**：输入 jsonl 文件或目录
+  - **`-o`**：输出 csv
+  - **`--meta-output`**：输出 json（schema/meta）
+  - **`--alias-output`**：输出 alias map（从 raw 构建时用）
+  - **`--workers`**：并行度
 
-### 2. 结构理解与统计（`analysis/`）
+- **`scripts/data_preprocess/obfuscate_jsonl.py`**：按 alias 混淆 jsonl
+  - **`-i` / `-o`**：输入/输出（文件或目录）
+  - **`--alias`**：alias map 路径
+  - **`--workers`**：并行度（目录模式）
 
-| 脚本 | 主要作用 | 如何泛化 |
-| --- | --- | --- |
-| `pretty_toucan.py` | 将少量 jsonl 记录转成带注释的 YAML/文本，便于人工检查对话、工具声明、函数调用参数。 | 如果你的工具声明不包含 `im_middle` 这类自定义标记，可替换解析函数；脚本本身已兼容字符串或字典形式。 |
-| `function_stats.py` | 扫描 jsonl，统计函数/工具出现频次，输出 `function_stats.csv`、`function_meta.json`，并可通过 `--alias-output` 同步生成 alias map。 | `-i` 可指向任意目录或文件；按需启用 `--alias-output`（以及 `--alias-existing`）即可一并产出混淆映射。 |
+- **`scripts/data_preprocess/build_param_pool.py`**：构建参数值池（供 param_values 负样本）
+  - **`-i`**：混淆后的 jsonl（文件或目录）
+  - **`-s`**：`function_stats.json`
+  - **`-o`**：`param_pool.json`
+  - **`--workers`**：并行度
 
-### 3. HAS 题目构造（`build_has/`）
+- **`scripts/build_has/build_has_api_script.py`**：生成单文件 MCQ（demo）
+  - **`--mode`**：`available | params | param_values`
+  - **`--negatives`**：负例数量
+  - **`--param-pool`**：`param_values` 模式需要
 
-| 脚本 | 主要作用 | 如何泛化 |
-| --- | --- | --- |
-| `build_has_api_script.py` | 逐条遍历函数调用，基于 `available/params/param_values` 等策略生成选择题。输入 jsonl 已经过混淆，因此脚本输出天然只含 alias。 | 任何包含 `messages[*].function_call` 的数据集都可直接使用；若字段名不同，重写 `_parse_arguments` 或对应题目构造函数。 |
-| `batch_generate.py` | 批量驱动器：可并行运行 `build_has_api_script.py`、可选 pretty 打印、复制原始文件等。 | 调整默认路径或通过 CLI 覆盖，即可用于其它数据目录的批量处理。 |
-| `build_has_api_prompt.py` | 调用 LLM（vLLM/OpenAI API）回放对话，自动合成 `question_param_values` 题目，并在落盘前校验 JSON。 | 只要 jsonl 中包含 `messages` 与 `function_call.arguments`，即可直接使用；如需适配其它模型，修改 prompt 构造和 `--model` 参数即可。 |
+- **`scripts/build_has/batch_generate.py`**：全量批处理生成 MCQ（无 prompt 或 prompt）
+  - **`--workers`**：并行度（脚本模式）
+  - **`--param-pool`**：参数池
+  - **`--prompt-mode`**：启用 prompt 生成（串行更适合小规模）
+  - **`--prompt-limit` / `--prompt-temperature` / `--prompt-max-tokens`**：prompt 控制
+
+- **`scripts/data_postprocess/assemble_toucan.py`**：将轨迹 + MCQ 拼装为训练格式
+  - **`-i/--conv-root`**：对话根目录
+  - **`-m/--mcq-root`**：MCQ 根目录
+  - **`--workers`**：并行度
+  - **`--passthrough-only`**：不注入 MCQ，仅做 UTF-8 严格写出（消融/对比）
+  - **`--no-text-output`**：只输出 jsonl，不写 txt
+  - **`--show-function-name`**：MCQ 题头展示函数名（默认隐藏）
+
 
 
 
@@ -242,7 +300,12 @@ python scripts/build_has/build_has_api_prompt.py \
 
 > JSONL/TXT 始终包含正确答案（便于模型学习与人工校验，`Answer: the answer is ...`）。如不需要文本副本可使用 `--no-text-output`。
 
-拼装规则如下：
+运行方式：
+- **推荐**：直接运行 README 顶部的 `./scripts/tests/full_generate_test.sh` / `./scripts/tests/single_generate_test.sh`
+- **消融/过滤**（不注入 MCQ）：运行 `assemble_toucan.py --passthrough-only`（见上方“命令清单”的 optional 区块）
+
+<details>
+<summary>展开：拼装规则（详细）</summary>
 
 1. 开头写 `Question:`、`工具清单：`，需要注入这个轨迹对应MCP文件中的假工具，工具乱序。
 2. `System tool declare:` 来自原始 `messages` 中 system/tool_declare，需要注入这个轨迹对应MCP文件中的假工具，工具乱序。
@@ -260,35 +323,7 @@ python scripts/build_has/build_has_api_prompt.py \
 6. 轨迹结束后补 `Target tools:`、`Question quality assessment:`、`Response quality assessment:`、`Metadata:`。
 
 该流程确保模型既能看到完整对话，又能学习多项选择题，不暴露答案。更多细节、字段含义及 concat 规划请参考 `scripts/ARCHITECTURE.md`。
-
-运行脚本示例：
-```bash
-# 自动批量：-i 指向原始轨迹根目录，-m 指向 MCQ 根目录（可与 -i 相同）
-# single
-python scripts/data_postprocess/assemble_toucan.py \
-  -i data/demo \
-  -m data/demo
-
-# full
-python scripts/data_postprocess/assemble_toucan.py \
-  -i data/Toucan-1.5M-obf \
-  -m data/Toucan-1.5M-generate \
-  --workers 32
-
-# 若仅想生成单个样本，可在准备好该前缀的四个文件后，把它们放进各自目录再运行同一命令；
-# 脚本会自动发现拥有完整 *_api_available/params/param_values 的前缀，仅对这些前缀输出
-
-# 仅做 UTF-8 严格写出/过滤，不注入 MCQ（用于消融或 scaling law）
-python scripts/data_postprocess/assemble_toucan.py \
-  -i data/Toucan-1.5M-obf \
-  -m data/Toucan-1.5M-generate \
-  --workers 32 \
-  --passthrough-only
-```
-> 选项摘要：
-> - `--passthrough-only`：跳过 MCQ 拼装，仅做 UTF-8 严格写出（遇到不可编码的记录逐条丢弃并打印告警），便于消融/对比实验。
-> - `--no-text-output`：只写 jsonl，不写人类可读 txt。
-> - `--show-function-name`：在 MCQ 题头展示函数名（默认隐藏）。
+</details>
 
 P.S 清洗数据脚本
 ```

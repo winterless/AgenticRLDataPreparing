@@ -5,7 +5,10 @@ Extract tagged python commands from README and materialize shell test scripts.
 Rules:
   - Inside fenced ```bash blocks, lines like `# full` / `# single` / `# online`
     act as decorators for the next python command.
+  - Inside fenced ```bash blocks, `# vars` collects shell variable defaults
+    for generated scripts (applies to both full and single).
   - Commands starting with `python ` (or `python3 `) inherit the most recent tag.
+    The tag is consumed after one command (i.e., it applies to the *next* command only).
   - `# online` commands are skipped; `# full` goes to full_generate_test.sh;
     `# single` goes to single_generate_test.sh.
   - `# test` comments are treated as documentation only and clear any pending tag.
@@ -19,7 +22,8 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-TAG_PATTERN = re.compile(r"#\s*(?P<tag>[a-zA-Z]+)")
+# NOTE: match directive lines only (avoid treating comments like "# full pipeline" as tags)
+TAG_PATTERN = re.compile(r"^#\s*(?P<tag>[A-Za-z][A-Za-z0-9_]*)\s*$")
 SCRIPT_PATH = Path(__file__).resolve()
 
 
@@ -46,26 +50,77 @@ def detect_tag(line: str) -> str | None:
     if not match:
         return None
     token = match.group("tag").lower()
-    if token == "test":
+    if token in {"test"}:
         return "test"
-    if "online" in token:
+    if token in {"vars", "var", "env"}:
+        return "vars"
+    if token in {"online"}:
         return "online"
-    if "full" in token:
+    if token in {"full"}:
         return "full"
-    if "single" in token or "signle" in token:
+    if token in {"single", "signle"}:
         return "single"
     return None
 
 
 def is_python_command(line: str) -> bool:
+    """
+    True if the line starts a python invocation.
+
+    Supports common wrappers like:
+      - `python ...`
+      - `python3 ...`
+      - `VAR=1 python ...`
+      - `stdbuf -oL -eL python ...`
+    """
     stripped = line.strip()
-    return stripped.startswith("python ") or stripped.startswith("python3 ")
+    if not stripped:
+        return False
+    tokens = stripped.split()
+    if not tokens:
+        return False
+
+    i = 0
+    # Skip leading env assignments: KEY=VALUE
+    while i < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=.*$", tokens[i]):
+        i += 1
+    if i >= len(tokens):
+        return False
+
+    if tokens[i] in {"python", "python3"}:
+        return True
+
+    # Allow `stdbuf ... python ...`
+    if tokens[i] == "stdbuf":
+        i += 1
+        while i < len(tokens) and tokens[i] not in {"python", "python3"}:
+            i += 1
+        return i < len(tokens) and tokens[i] in {"python", "python3"}
+
+    return False
+
+
+def _dedupe_vars(lines: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for ln in lines:
+        stripped = ln.strip()
+        if not stripped:
+            continue
+        m = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=", stripped)
+        key = m.group("key") if m else None
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        out.append(stripped)
+    return out
 
 
 def collect_commands(readme: Path) -> dict[str, list[str]]:
     inside_bash = False
     current_tag: str | None = None
-    commands = {"full": [], "single": []}
+    commands: dict[str, list[str]] = {"full": [], "single": [], "vars": []}
 
     lines = readme.read_text(encoding="utf-8").splitlines()
     i = 0
@@ -98,6 +153,28 @@ def collect_commands(readme: Path) -> dict[str, list[str]]:
             i += 1
             continue
 
+        if current_tag == "vars":
+            block = []
+            while i < total:
+                nxt = lines[i]
+                nxt_strip = nxt.strip()
+                if nxt_strip.startswith("```"):
+                    inside_bash = False
+                    current_tag = None
+                    i += 1
+                    break
+                # Stop if a new directive starts (e.g. # full / # single / # vars)
+                if detect_tag(nxt_strip):
+                    break
+                # Keep comment lines; keep indentation minimal by stripping.
+                if nxt_strip:
+                    block.append(nxt_strip)
+                i += 1
+            commands["vars"].extend(block)
+            # Tag is a decorator for the next block only.
+            current_tag = None
+            continue
+
         if is_python_command(stripped) and current_tag in {"full", "single"}:
             target_tag = current_tag
             block = [stripped]
@@ -117,17 +194,27 @@ def collect_commands(readme: Path) -> dict[str, list[str]]:
                 block.append(nxt_strip)
                 i += 1
             commands[target_tag].append("\n".join(block))
+            # Tag is a decorator for the next command only.
+            current_tag = None
             # Skip blank/comment separator
             i += 1
             continue
 
         i += 1
 
+    # Dedupe vars by var name, keep first occurrence.
+    commands["vars"] = _dedupe_vars(commands["vars"])
     return commands
 
 
-def write_shell_script(path: Path, commands: Iterable[str]) -> None:
+def write_shell_script(path: Path, commands: Iterable[str], vars_lines: Iterable[str]) -> None:
     lines = ["#!/bin/bash", "set -euo pipefail", ""]
+    vars_written = False
+    for v in vars_lines:
+        vars_written = True
+        lines.append(v)
+    if vars_written:
+        lines.append("")
     written = False
     for cmd in commands:
         written = True
@@ -170,8 +257,8 @@ def main() -> None:
     if not args.readme.exists():
         raise SystemExit(f"README not found: {args.readme}")
     commands = collect_commands(args.readme)
-    write_shell_script(args.full_output, commands["full"])
-    write_shell_script(args.single_output, commands["single"])
+    write_shell_script(args.full_output, commands["full"], commands["vars"])
+    write_shell_script(args.single_output, commands["single"], commands["vars"])
     print(
         f"[INFO] Generated {len(commands['full'])} full and "
         f"{len(commands['single'])} single commands."
