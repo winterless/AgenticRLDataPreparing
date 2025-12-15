@@ -348,3 +348,36 @@ python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to
   ```
   ./scripts/tests/single_generate_test.sh
   ```
+
+---
+
+## Stage2：抑制“背函数名 / 见 MCQ 就答”的副作用（训练与数据改造清单）
+
+### 现象（问题定义）
+- 用大规模 `*_mcq_assembled.txt` 做 CPT 后，模型在**没有工具上下文**、也**没有被要求评估/做题**时，会主动输出 **MCQ 答案/评分段落**。
+- 行为上更像在“记住稳定的 function/alias name”，而不是“读当前可用工具描述再决定”。
+
+### 根因假设（高概率）
+- **名字信号过强且稳定**：同一工具在全语料里 alias 固定，极易被记忆。
+- **格式触发过强**：训练文本里 MCQ/Answer/评分段落出现频繁，模型学到“看到类似上下文就输出答案/评估”。
+
+### 数据侧改造（优先做）
+- **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。---- done
+- **弱化/隐藏名字**：MCQ header/options、available tools 列表、function_call.name 尽量不提供可稳定记忆的名称；让选择依赖描述与 schema。 ---- done
+- **Answer 遮蔽**：训练版可移除 `Answer:` 或替换为占位（降低“必输出答案”的学习信号）。
+- **MCQ 下采样 + 分 shard**：把 `mcq_*` 与 `no_mcq` 分 shard，CPT 混入比例可控（例如 5–20%），便于做 ablation。
+- **加入反例**：未提供工具/未要求评估时，目标输出是澄清/拒答；加入相似描述但不同 alias 的对比样本，强化“读描述”。
+
+### 训练侧建议（配合数据）
+- **分阶段**：先 CPT（含上面数据改造 + 下采样/隔离），再少量 SFT 强化“仅在用户要求时才做题/评估”的指令遵守。
+- **推理侧约束**：system prompt 明确要求“仅基于当前可用工具描述；描述不足就澄清；未要求时禁止自出题/自打分”。
+
+### 待实现的工程开关（建议落到 `assemble_toucan.py`）
+- `--random-alias-per-record`：覆盖 available tools / MCQ / function_call.name
+- `--answer-redact {drop,redact}`：移除或遮蔽 `Answer:` 行
+- `--mcq-subsample <p>`：控制 MCQ 注入比例
+- `--mcq-tag "[MCQ]"` / `--emit-no-mcq-tag`：样式隔离与 shard 标记
+
+### 验收标准（最小可测）
+- 在**无工具声明/无评估指令**的输入上，模型不再自发输出 `[MCQ]` / `Answer:` / 评分段落。
+- 在**工具描述存在**且 alias 被随机化的场景下，仍能基于描述正确选工具/参数。
