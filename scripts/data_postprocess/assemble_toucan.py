@@ -41,6 +41,8 @@ class BatchJob:
     param_values: Path | None
     output: Path
     text_output: Path | None
+    skip_mcq: bool
+    missing_mcq_dump: Path | None = None
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stitch Toucan trajectories with MCQs.")
     parser.add_argument(
@@ -79,6 +81,22 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Do not stitch MCQs; just emit UTF-8 cleaned records/text. "
             "Useful for ablations or scaling-law runs without MCQ augmentation."
+        ),
+    )
+    parser.add_argument(
+        "--keep-missing-mcq",
+        action="store_true",
+        help=(
+            "Keep conversations even if MCQ files are missing; emit them without MCQs instead of skipping."
+        ),
+    )
+    parser.add_argument(
+        "--missing-mcq-dump-dir",
+        type=Path,
+        default=None,
+        help=(
+            "If set, pretty-prints conversations that lacked MCQs into this directory "
+            "(one txt per conversation) for later inspection. Only used when MCQs are missing."
         ),
     )
     return parser.parse_args()
@@ -335,6 +353,7 @@ def assemble_to_outputs(
     text_path: Path | None,
     show_function_name: bool,
     skip_mcq: bool,
+    missing_mcq_dump: Path | None = None,
 ) -> tuple[int, int]:
     if not conversation_path.exists():
         raise FileNotFoundError(f"Conversation file missing: {conversation_path}")
@@ -360,9 +379,14 @@ def assemble_to_outputs(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     text_fh = text_path.open("w", encoding="utf-8") if text_path else None
+    missing_fh = None
+    if missing_mcq_dump:
+        missing_mcq_dump.parent.mkdir(parents=True, exist_ok=True)
+        missing_fh = missing_mcq_dump.open("w", encoding="utf-8")
     kept = 0
     dropped_jsonl = 0
     dropped_text = 0
+    dropped_missing = 0
     try:
         with output_path.open("w", encoding="utf-8") as fh:
             for record in to_emit:
@@ -400,21 +424,42 @@ def assemble_to_outputs(
                             file=sys.stderr,
                         )
                         continue
+                if missing_fh:
+                    try:
+                        missing_fh.write(base_text)
+                        if not base_text.endswith("\n"):
+                            missing_fh.write("\n")
+                        missing_fh.write("\n")
+                    except UnicodeEncodeError:
+                        dropped_missing += 1
+                        print(
+                            f"[WARN] Dropped non-UTF-8 missing-MCQ text line (uuid={payload['uuid']}, file={conversation_path})",
+                            file=sys.stderr,
+                        )
+
     finally:
         if text_fh:
             text_fh.close()
+        if missing_fh:
+            missing_fh.close()
 
-    if dropped_jsonl or dropped_text:
+    if dropped_jsonl or dropped_text or dropped_missing:
         print(
             f"[INFO] {conversation_path.name}: kept {kept}, "
-            f"dropped_jsonl={dropped_jsonl}, dropped_text={dropped_text}",
+            f"dropped_jsonl={dropped_jsonl}, dropped_text={dropped_text}, dropped_missing={dropped_missing}",
             file=sys.stderr,
         )
 
     return kept, mcq_total
 
 def discover_batch_jobs(
-    conv_root: Path, mcq_root: Path, include_text: bool, require_mcq: bool
+    conv_root: Path,
+    mcq_root: Path,
+    include_text: bool,
+    require_mcq: bool,
+    global_skip_mcq: bool,
+    keep_missing_mcq: bool,
+    missing_mcq_dump_dir: Path | None,
 ) -> tuple[list[BatchJob], list[str]]:
     jobs: list[BatchJob] = []
     warnings: list[str] = []
@@ -438,17 +483,22 @@ def discover_batch_jobs(
         params = mcq_dir / f"{prefix}_api_params.jsonl"
         param_values = mcq_dir / f"{prefix}_api_param_values.jsonl"
         missing = [path for path in (available, params, param_values) if not path.exists()]
-        if missing and require_mcq:
-            warnings.append(
-                f"[WARN] Skip '{prefix}' (relative {rel}) because missing: "
-                + ", ".join(str(m) for m in missing)
-            )
-            continue
-        if missing and not require_mcq:
+        skip_mcq = global_skip_mcq
+        missing_dump = None
+        if missing:
+            if require_mcq and not keep_missing_mcq:
+                warnings.append(
+                    f"[WARN] Skip '{prefix}' (relative {rel}) because missing: "
+                    + ", ".join(str(m) for m in missing)
+                )
+                continue
             warnings.append(
                 f"[WARN] Missing MCQs for '{prefix}' (relative {rel}); assembling without MCQs."
             )
             available = params = param_values = None
+            skip_mcq = True
+            if missing_mcq_dump_dir:
+                missing_dump = (missing_mcq_dump_dir / rel).with_suffix(".txt")
         text_output = (mcq_dir / f"{prefix}_mcq_assembled.txt") if include_text else None
         jobs.append(
             BatchJob(
@@ -459,10 +509,13 @@ def discover_batch_jobs(
                 param_values=param_values,
                 output=mcq_dir / f"{prefix}_mcq_assembled.jsonl",
                 text_output=text_output,
+                skip_mcq=skip_mcq,
+                missing_mcq_dump=missing_dump,
             )
         )
-    return jobs, warnings
 
+
+    return jobs, warnings
 
 
 def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None:
@@ -472,7 +525,13 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
         raise SystemExit(f"MCQ root not found: {mcq_root}")
 
     jobs, warnings = discover_batch_jobs(
-        conv_root, mcq_root, not args.no_text_output, require_mcq=not args.passthrough_only
+        conv_root,
+        mcq_root,
+        not args.no_text_output,
+        require_mcq=not args.passthrough_only and not args.keep_missing_mcq,
+        global_skip_mcq=args.passthrough_only,
+        keep_missing_mcq=args.keep_missing_mcq,
+        missing_mcq_dump_dir=args.missing_mcq_dump_dir,
     )
     for msg in warnings:
         print(msg)
@@ -495,7 +554,8 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
                 job.output,
                 job.text_output,
                 args.show_function_name,
-                args.passthrough_only,
+                job.skip_mcq,
+                job.missing_mcq_dump,
             ): job
             for job in jobs
         }
