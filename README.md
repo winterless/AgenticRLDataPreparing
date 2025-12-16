@@ -65,6 +65,32 @@ STATS_CSV="${STATS_CSV:-${STATS_DIR}/function_stats.csv}"
 STATS_JSON="${STATS_JSON:-${STATS_DIR}/function_stats.json}"
 PARAM_POOL="${PARAM_POOL:-${STATS_DIR}/param_pool.json}"
 
+# stage2 / ablation knobs (assemble_toucan.py)
+TASK_SELECT_TAG="${TASK_SELECT_TAG:-<TASK=SELECT>}"
+ANSWER_REDACT="${ANSWER_REDACT:-none}" # none|redact|drop
+MCQ_SUBSAMPLE="${MCQ_SUBSAMPLE:-1.0}"  # 0..1
+MCQ_SUBSAMPLE_SEED="${MCQ_SUBSAMPLE_SEED:-0}"
+SPLIT_SHARDS="${SPLIT_SHARDS:-0}"      # 0|1
+SPLIT_SHARDS_FLAG=""
+if [ "${SPLIT_SHARDS}" = "1" ]; then
+  SPLIT_SHARDS_FLAG="--split-shards"
+fi
+SKIP_METADATA="${SKIP_METADATA:-1}"    # 0|1 (1=skip)
+SKIP_METADATA_FLAG=""
+if [ "${SKIP_METADATA}" = "1" ]; then
+  SKIP_METADATA_FLAG="--skip-metadata"
+fi
+SKIP_QUESTION_QUALITY="${SKIP_QUESTION_QUALITY:-1}"  # 0|1 (1=skip)
+SKIP_QUESTION_QUALITY_FLAG=""
+if [ "${SKIP_QUESTION_QUALITY}" = "1" ]; then
+  SKIP_QUESTION_QUALITY_FLAG="--skip-question-quality"
+fi
+SKIP_RESPONSE_QUALITY="${SKIP_RESPONSE_QUALITY:-1}"  # 0|1 (1=skip)
+SKIP_RESPONSE_QUALITY_FLAG=""
+if [ "${SKIP_RESPONSE_QUALITY}" = "1" ]; then
+  SKIP_RESPONSE_QUALITY_FLAG="--skip-response-quality"
+fi
+
 # demo (single) paths
 DEMO_DIR="${DEMO_DIR:-data/demo}"
 DEMO_PARQUET="${DEMO_PARQUET:-Toucan-1.5M/Toucan-1.5M/Kimi-K2/train-00000-of-00040.parquet}"
@@ -121,7 +147,15 @@ python scripts/build_has/batch_generate.py \
 python scripts/data_postprocess/assemble_toucan.py \
   -i "${OBF_ROOT}" \
   -m "${GENERATE_ROOT}" \
-  --workers "${WORKERS}"
+  --workers "${WORKERS}" \
+  --task-select-tag "${TASK_SELECT_TAG}" \
+  --answer-redact "${ANSWER_REDACT}" \
+  --mcq-subsample "${MCQ_SUBSAMPLE}" \
+  --mcq-subsample-seed "${MCQ_SUBSAMPLE_SEED}" \
+  ${SPLIT_SHARDS_FLAG} \
+  ${SKIP_METADATA_FLAG} \
+  ${SKIP_QUESTION_QUALITY_FLAG} \
+  ${SKIP_RESPONSE_QUALITY_FLAG}
 
 # ---------- single: demo (no prompt) ----------
 # single
@@ -171,7 +205,15 @@ python scripts/build_has/build_has_api_script.py \
 # single
 python scripts/data_postprocess/assemble_toucan.py \
   -i "${DEMO_DIR}" \
-  -m "${DEMO_DIR}"
+  -m "${DEMO_DIR}" \
+  --task-select-tag "${TASK_SELECT_TAG}" \
+  --answer-redact "${ANSWER_REDACT}" \
+  --mcq-subsample "${MCQ_SUBSAMPLE}" \
+  --mcq-subsample-seed "${MCQ_SUBSAMPLE_SEED}" \
+  ${SPLIT_SHARDS_FLAG} \
+  ${SKIP_METADATA_FLAG} \
+  ${SKIP_QUESTION_QUALITY_FLAG} \
+  ${SKIP_RESPONSE_QUALITY_FLAG}
 
 # ---------- optional / docs-only ----------
 # test
@@ -246,6 +288,12 @@ python scripts/build_has/build_has_api_prompt.py \
   - **`-i/--conv-root`**：对话根目录
   - **`-m/--mcq-root`**：MCQ 根目录
   - **`--workers`**：并行度
+  - **`--answer-redact {none,redact,drop}`**：控制是否输出 `Answer:` 行（训练版建议 `redact` 或 `drop`）
+  - **`--mcq-subsample <p>`**：按 uuid 确定性下采样 MCQ 注入比例（0..1）
+  - **`--mcq-subsample-seed <n>`**：下采样随机种子（用于可复现）
+  - **`--split-shards`**：分 shard 输出 `*_mcq_assembled.*` 与 `*_no_mcq_assembled.*`
+  - **`--skip-metadata`**：跳过输出 Metadata 字段（默认跳过）
+  - **`--skip-question-quality`**：跳过输出 Question quality assessment（默认跳过）
   - **`--passthrough-only`**：不注入 MCQ，仅做 UTF-8 严格写出（消融/对比）
   - **`--no-text-output`**：只输出 jsonl，不写 txt
   - **`--show-function-name`**：MCQ 题头展示函数名（默认隐藏）
@@ -362,10 +410,10 @@ python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to
 - **格式触发过强**：训练文本里 MCQ/Answer/评分段落出现频繁，模型学到“看到类似上下文就输出答案/评估”。
 
 ### 数据侧改造（优先做）
-- **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。---- done
-- **弱化/隐藏名字**：MCQ header/options、available tools 列表、function_call.name 尽量不提供可稳定记忆的名称；让选择依赖描述与 schema。 ---- done
-- **Answer 遮蔽**：训练版可移除 `Answer:` 或替换为占位（降低“必输出答案”的学习信号）。
-- **MCQ 下采样 + 分 shard**：把 `mcq_*` 与 `no_mcq` 分 shard，CPT 混入比例可控（例如 5–20%），便于做 ablation。
+- **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。已实现：`scripts/data_preprocess/obfuscate_jsonl.py` 默认 `--alias-scope record`（每条记录生成随机 alias map）。
+- **弱化/隐藏名字（避免泄露原始函数名）**：已实现：`obfuscate_jsonl.py` 会重写 `available_tools` / `messages.function_call.name` / `tool_calls` / `<tools>...</tools>` 以及 MCQ 字段（`question/answer/options`）中的名称为 alias。
+- **Answer 遮蔽**：已实现：`assemble_toucan.py --answer-redact {redact,drop}`（redact 保留行但隐藏答案；drop 移除 Answer 行）。
+- **MCQ 下采样 + 分 shard**：已实现：`assemble_toucan.py --mcq-subsample <p> --split-shards`（按 uuid 确定性下采样；输出 `*_mcq_assembled.*` 与 `*_no_mcq_assembled.*` 两个 shard）。
 - **加入反例**：未提供工具/未要求评估时，目标输出是澄清/拒答；加入相似描述但不同 alias 的对比样本，强化“读描述”。
 
 ### 训练侧建议（配合数据）

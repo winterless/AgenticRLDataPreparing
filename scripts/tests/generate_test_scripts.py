@@ -101,12 +101,34 @@ def is_python_command(line: str) -> bool:
 
 
 def _dedupe_vars(lines: list[str]) -> list[str]:
+    """Dedupe variable assignments, but preserve control flow (if/for/while/case/etc)."""
     out: list[str] = []
     seen: set[str] = set()
+    inside_control = False  # Track if we're inside if/for/while/case block
+    
     for ln in lines:
         stripped = ln.strip()
         if not stripped:
             continue
+        
+        # Detect control flow keywords
+        if any(stripped.startswith(kw) for kw in ["if ", "elif ", "else", "for ", "while ", "case ", "select "]):
+            inside_control = True
+            out.append(stripped)
+            continue
+        
+        # End of control flow block
+        if stripped in ["fi", "done", "esac"]:
+            inside_control = False
+            out.append(stripped)
+            continue
+        
+        # Inside control flow: don't dedupe (allow re-assignment)
+        if inside_control:
+            out.append(stripped)
+            continue
+        
+        # Outside control flow: dedupe by variable name
         m = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=", stripped)
         key = m.group("key") if m else None
         if key and key in seen:
