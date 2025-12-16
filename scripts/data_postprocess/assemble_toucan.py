@@ -254,7 +254,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--answer-redact",
         choices=["none", "redact", "drop"],
-        default="none",
+        default="drop",
         help=(
             "Control whether to reveal MCQ answers in assembled text. "
             "'none' keeps the original Answer line; 'redact' keeps the line but hides the value; "
@@ -811,10 +811,10 @@ def assemble_to_outputs(
                     record_has_mcq=keep_mcq,
                     random_alias_per_record=random_alias_per_record,
                     random_alias_seed=random_alias_seed,
-                    skip_metadata,
-                    skip_question_quality,
-                    skip_response_quality,
-                    stats_meta,
+                    skip_metadata=skip_metadata,
+                    skip_question_quality=skip_question_quality,
+                    skip_response_quality=skip_response_quality,
+                    stats_meta=stats_meta,
                 )
                 payload = {
                     "uuid": record.get("uuid") or record.get("record_uuid"),
@@ -972,12 +972,21 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
 
     # Load function stats for MCQ distractor descriptions
     stats_meta: dict[str, dict] | None = None
-    if args.stats and args.stats.exists():
+    # If --stats is not explicitly provided, try the repo default.
+    # This ensures MCQ decoy tool options can be augmented with descriptions/schemas
+    # so the model can genuinely select based on tool semantics.
+    stats_path: Path | None = args.stats
+    if stats_path is None:
+        candidate = REPO_ROOT / "stats" / "function_stats.json"
+        if candidate.exists():
+            stats_path = candidate
+
+    if stats_path and stats_path.exists():
         try:
-            stats_meta = json.loads(args.stats.read_text(encoding="utf-8"))
-            print(f"[INFO] Loaded {len(stats_meta)} function profiles from {args.stats}")
+            stats_meta = json.loads(stats_path.read_text(encoding="utf-8"))
+            print(f"[INFO] Loaded {len(stats_meta)} function profiles from {stats_path}")
         except Exception as exc:
-            print(f"[WARN] Failed to load stats from {args.stats}: {exc}")
+            print(f"[WARN] Failed to load stats from {stats_path}: {exc}")
             stats_meta = None
 
     # Resolve end-tag behavior:
