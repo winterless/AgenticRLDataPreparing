@@ -68,27 +68,46 @@ PARAM_POOL="${PARAM_POOL:-${STATS_DIR}/param_pool.json}"
 # stage2 / ablation knobs (assemble_toucan.py)
 TASK_SELECT_TAG="${TASK_SELECT_TAG:-<TASK=SELECT>}"
 ANSWER_REDACT="${ANSWER_REDACT:-none}" # none|redact|drop
-MCQ_SUBSAMPLE="${MCQ_SUBSAMPLE:-1.0}"  # 0..1
+MCQ_SUBSAMPLE="${MCQ_SUBSAMPLE:-0.9}"  # 0..1 (default: 90% records keep MCQs)
 MCQ_SUBSAMPLE_SEED="${MCQ_SUBSAMPLE_SEED:-0}"
+MCQ_TAG="${MCQ_TAG:-}"                 # e.g. "[MCQ]" (empty disables)
+EMIT_NO_MCQ_TAG="${EMIT_NO_MCQ_TAG:-0}" # 0|1 (1 emits [NO_MCQ] marker on no-MCQ records)
+RANDOM_ALIAS_PER_RECORD="${RANDOM_ALIAS_PER_RECORD:-0}" # 0|1
+RANDOM_ALIAS_SEED="${RANDOM_ALIAS_SEED:-0}"
+EMIT_LOSS_MASK_TAGS="${EMIT_LOSS_MASK_TAGS:-0}" # 0|1 (wrap context blocks with loss_mask=0 tags)
+LOSS_MASK0_BEGIN_TAG="${LOSS_MASK0_BEGIN_TAG:-<LOSS_MASK=0>}"
+LOSS_MASK0_END_TAG="${LOSS_MASK0_END_TAG:-</LOSS_MASK=0>}"
 SPLIT_SHARDS="${SPLIT_SHARDS:-0}"      # 0|1
 SPLIT_SHARDS_FLAG=""
 if [ "${SPLIT_SHARDS}" = "1" ]; then
   SPLIT_SHARDS_FLAG="--split-shards"
 fi
-SKIP_METADATA="${SKIP_METADATA:-1}"    # 0|1 (1=skip)
-SKIP_METADATA_FLAG=""
-if [ "${SKIP_METADATA}" = "1" ]; then
-  SKIP_METADATA_FLAG="--skip-metadata"
+EMIT_METADATA="${EMIT_METADATA:-0}"    # 0|1 (1=emit)
+EMIT_METADATA_FLAG=""
+if [ "${EMIT_METADATA}" = "1" ]; then
+  EMIT_METADATA_FLAG="--emit-metadata"
 fi
-SKIP_QUESTION_QUALITY="${SKIP_QUESTION_QUALITY:-1}"  # 0|1 (1=skip)
-SKIP_QUESTION_QUALITY_FLAG=""
-if [ "${SKIP_QUESTION_QUALITY}" = "1" ]; then
-  SKIP_QUESTION_QUALITY_FLAG="--skip-question-quality"
+EMIT_QUESTION_QUALITY="${EMIT_QUESTION_QUALITY:-0}"  # 0|1 (1=emit)
+EMIT_QUESTION_QUALITY_FLAG=""
+if [ "${EMIT_QUESTION_QUALITY}" = "1" ]; then
+  EMIT_QUESTION_QUALITY_FLAG="--emit-question-quality"
 fi
-SKIP_RESPONSE_QUALITY="${SKIP_RESPONSE_QUALITY:-1}"  # 0|1 (1=skip)
-SKIP_RESPONSE_QUALITY_FLAG=""
-if [ "${SKIP_RESPONSE_QUALITY}" = "1" ]; then
-  SKIP_RESPONSE_QUALITY_FLAG="--skip-response-quality"
+EMIT_RESPONSE_QUALITY="${EMIT_RESPONSE_QUALITY:-0}"  # 0|1 (1=emit)
+EMIT_RESPONSE_QUALITY_FLAG=""
+if [ "${EMIT_RESPONSE_QUALITY}" = "1" ]; then
+  EMIT_RESPONSE_QUALITY_FLAG="--emit-response-quality"
+fi
+EMIT_NO_MCQ_TAG_FLAG=""
+if [ "${EMIT_NO_MCQ_TAG}" = "1" ]; then
+  EMIT_NO_MCQ_TAG_FLAG="--emit-no-mcq-tag"
+fi
+RANDOM_ALIAS_PER_RECORD_FLAG=""
+if [ "${RANDOM_ALIAS_PER_RECORD}" = "1" ]; then
+  RANDOM_ALIAS_PER_RECORD_FLAG="--random-alias-per-record"
+fi
+EMIT_LOSS_MASK_TAGS_FLAG=""
+if [ "${EMIT_LOSS_MASK_TAGS}" = "1" ]; then
+  EMIT_LOSS_MASK_TAGS_FLAG="--emit-loss-mask-tags"
 fi
 
 # demo (single) paths
@@ -150,12 +169,19 @@ python scripts/data_postprocess/assemble_toucan.py \
   --workers "${WORKERS}" \
   --task-select-tag "${TASK_SELECT_TAG}" \
   --answer-redact "${ANSWER_REDACT}" \
+  --mcq-tag "${MCQ_TAG}" \
+  ${EMIT_NO_MCQ_TAG_FLAG} \
+  ${RANDOM_ALIAS_PER_RECORD_FLAG} \
+  --random-alias-seed "${RANDOM_ALIAS_SEED}" \
+  ${EMIT_LOSS_MASK_TAGS_FLAG} \
+  --loss-mask0-begin-tag "${LOSS_MASK0_BEGIN_TAG}" \
+  --loss-mask0-end-tag "${LOSS_MASK0_END_TAG}" \
   --mcq-subsample "${MCQ_SUBSAMPLE}" \
   --mcq-subsample-seed "${MCQ_SUBSAMPLE_SEED}" \
   ${SPLIT_SHARDS_FLAG} \
-  ${SKIP_METADATA_FLAG} \
-  ${SKIP_QUESTION_QUALITY_FLAG} \
-  ${SKIP_RESPONSE_QUALITY_FLAG}
+  ${EMIT_METADATA_FLAG} \
+  ${EMIT_QUESTION_QUALITY_FLAG} \
+  ${EMIT_RESPONSE_QUALITY_FLAG}
 
 # ---------- single: demo (no prompt) ----------
 # single
@@ -208,12 +234,19 @@ python scripts/data_postprocess/assemble_toucan.py \
   -m "${DEMO_DIR}" \
   --task-select-tag "${TASK_SELECT_TAG}" \
   --answer-redact "${ANSWER_REDACT}" \
+  --mcq-tag "${MCQ_TAG}" \
+  ${EMIT_NO_MCQ_TAG_FLAG} \
+  ${RANDOM_ALIAS_PER_RECORD_FLAG} \
+  --random-alias-seed "${RANDOM_ALIAS_SEED}" \
+  ${EMIT_LOSS_MASK_TAGS_FLAG} \
+  --loss-mask0-begin-tag "${LOSS_MASK0_BEGIN_TAG}" \
+  --loss-mask0-end-tag "${LOSS_MASK0_END_TAG}" \
   --mcq-subsample "${MCQ_SUBSAMPLE}" \
   --mcq-subsample-seed "${MCQ_SUBSAMPLE_SEED}" \
   ${SPLIT_SHARDS_FLAG} \
-  ${SKIP_METADATA_FLAG} \
-  ${SKIP_QUESTION_QUALITY_FLAG} \
-  ${SKIP_RESPONSE_QUALITY_FLAG}
+  ${EMIT_METADATA_FLAG} \
+  ${EMIT_QUESTION_QUALITY_FLAG} \
+  ${EMIT_RESPONSE_QUALITY_FLAG}
 
 # ---------- optional / docs-only ----------
 # test
@@ -288,12 +321,16 @@ python scripts/build_has/build_has_api_prompt.py \
   - **`-i/--conv-root`**：对话根目录
   - **`-m/--mcq-root`**：MCQ 根目录
   - **`--workers`**：并行度
-  - **`--answer-redact {none,redact,drop}`**：控制是否输出 `Answer:` 行（训练版建议 `redact` 或 `drop`）
-  - **`--mcq-subsample <p>`**：按 uuid 确定性下采样 MCQ 注入比例（0..1）
+  - **`--answer-redact {none,redact,drop}`**：控制是否输出 `Answer:` 行（默认 `drop`；训练版建议 `redact` 或 `drop`）
+  - **`--mcq-subsample <p>`**：按 uuid 确定性下采样 MCQ 注入比例（0..1，默认 `0.9`）
   - **`--mcq-subsample-seed <n>`**：下采样随机种子（用于可复现）
+  - **`--mcq-tag "<tag>"`**：每个 MCQ block 前插入一行 tag（样式隔离/检索；空字符串等价于不输出）
+  - **`--emit-no-mcq-tag`**：对无 MCQ 的 record 插入 `[NO_MCQ]` marker（用于 shard 标记/下游过滤）
+  - **`--random-alias-per-record` / `--random-alias-seed <n>`**：记录级随机 alias，覆盖 Available tools / MCQ / function_call.name
+  - **`--emit-loss-mask-tags`**：对“只读/上下文块”包一层 `<LOSS_MASK=0> ... </LOSS_MASK=0>`（便于下游做 token loss mask）
+  - **`--loss-mask0-begin-tag` / `--loss-mask0-end-tag`**：自定义 loss_mask=0 标签
   - **`--split-shards`**：分 shard 输出 `*_mcq_assembled.*` 与 `*_no_mcq_assembled.*`
-  - **`--skip-metadata`**：跳过输出 Metadata 字段（默认跳过）
-  - **`--skip-question-quality`**：跳过输出 Question quality assessment（默认跳过）
+  - **`--emit-metadata / --emit-question-quality / --emit-response-quality`**：如需保留 `Metadata:` / `Question/Response quality assessment:` 段落（默认不输出）
   - **`--passthrough-only`**：不注入 MCQ，仅做 UTF-8 严格写出（消融/对比）
   - **`--no-text-output`**：只输出 jsonl，不写 txt
   - **`--show-function-name`**：MCQ 题头展示函数名（默认隐藏）
@@ -346,7 +383,7 @@ python scripts/build_has/build_has_api_prompt.py \
 
 `scripts/data_postprocess/assemble_toucan.py` 会扫描 `-i/--conv-root` 目录下的对话 jsonl，并在 `-m/--mcq-root` 里查找同前缀的 `_api_{available,params,param_values}.jsonl`。一旦发现完整组合，就会写出 `<prefix>_mcq_assembled.jsonl` + `<prefix>_mcq_assembled.txt`（路径位于 MCQ 目录）。`data/demo/` 已内置 `toucan`
 
-> JSONL/TXT 始终包含正确答案（便于模型学习与人工校验，`Answer: the answer is ...`）。如不需要文本副本可使用 `--no-text-output`。
+> `Answer:` 行是否保留由 `--answer-redact {none,redact,drop}` 控制（默认 `drop`：不输出答案；`redact`：输出但隐藏答案；`none`：输出原始答案，便于人工校验）。如不需要文本副本可使用 `--no-text-output`。
 
 运行方式：
 - **推荐**：直接运行 README 顶部的 `./scripts/tests/full_generate_test.sh` / `./scripts/tests/single_generate_test.sh`
@@ -408,11 +445,17 @@ python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to
 ### 根因假设（高概率）
 - **名字信号过强且稳定**：同一工具在全语料里 alias 固定，极易被记忆。
 - **格式触发过强**：训练文本里 MCQ/Answer/评分段落出现频繁，模型学到“看到类似上下文就输出答案/评估”。
+- **选项缺少语义对齐**：MCQ options 里出现的干扰项如果不在 Available tools 中，模型只能“背名字/记分布”，无法做“基于描述选择”。
 
 ### 数据侧改造（优先做）
-- **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。已实现：`scripts/data_preprocess/obfuscate_jsonl.py` 默认 `--alias-scope record`（每条记录生成随机 alias map）。
+- **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。
+  - 已实现（jsonl 侧）：`scripts/data_preprocess/obfuscate_jsonl.py --alias-scope record`
+  - 已实现（组装输出侧）：`assemble_toucan.py --random-alias-per-record`
 - **弱化/隐藏名字（避免泄露原始函数名）**：已实现：`obfuscate_jsonl.py` 会重写 `available_tools` / `messages.function_call.name` / `tool_calls` / `<tools>...</tools>` 以及 MCQ 字段（`question/answer/options`）中的名称为 alias。
-- **Answer 遮蔽**：已实现：`assemble_toucan.py --answer-redact {redact,drop}`（redact 保留行但隐藏答案；drop 移除 Answer 行）。
+- **MCQ 干扰项描述补全（让模型能“读描述选”）**：已实现：`assemble_toucan.py` 会将 **MCQ options 中出现但不在 `available_tools`** 的函数，从 `stats/function_stats.json` 补齐 `description + schema` 并合并进同一个 **Available tools** 列表（不创建 “Extended tools” 区块）。
+  - 默认行为：若未显式传 `--stats`，会自动尝试加载 `stats/function_stats.json`
+  - 仅补当前记录涉及的少量工具（通常就是 MCQ options 里的那几个），长度可控；若仍担心上下文，可在训练里用 negative 强化“不能靠名字偷懒/必须看描述”
+- **Answer 遮蔽**：已实现：`assemble_toucan.py --answer-redact {none,redact,drop}`（默认 drop；redact 保留行但隐藏答案；none 输出原始答案用于人工校验）。
 - **MCQ 下采样 + 分 shard**：已实现：`assemble_toucan.py --mcq-subsample <p> --split-shards`（按 uuid 确定性下采样；输出 `*_mcq_assembled.*` 与 `*_no_mcq_assembled.*` 两个 shard）。
 - **加入反例**：未提供工具/未要求评估时，目标输出是澄清/拒答；加入相似描述但不同 alias 的对比样本，强化“读描述”。
 
@@ -420,12 +463,13 @@ python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to
 - **分阶段**：先 CPT（含上面数据改造 + 下采样/隔离），再少量 SFT 强化“仅在用户要求时才做题/评估”的指令遵守。
 - **推理侧约束**：system prompt 明确要求“仅基于当前可用工具描述；描述不足就澄清；未要求时禁止自出题/自打分”。
 
-### 待实现的工程开关（建议落到 `assemble_toucan.py`）
-- `--random-alias-per-record`：覆盖 available tools / MCQ / function_call.name
-- `--answer-redact {drop,redact}`：移除或遮蔽 `Answer:` 行
-- `--mcq-subsample <p>`：控制 MCQ 注入比例
-- `--mcq-tag "[MCQ]"` / `--emit-no-mcq-tag`：样式隔离与 shard 标记
+### 工程开关（`assemble_toucan.py` 已支持）
+- `--stats <path>`：为 MCQ options 中的干扰项补齐工具 `description/schema`（不传则默认尝试 `stats/function_stats.json`）
+- `--answer-redact {none,redact,drop}`：控制是否输出 `Answer:` 行（默认 `drop`）
+- `--random-alias-per-record`：记录级随机 alias，覆盖 Available tools / MCQ / function_call.name
+- `--mcq-subsample <p>` + `--split-shards`：控制 MCQ 注入比例与分 shard
+- `--mcq-tag "<tag>"` / `--task-select-tag "<tag>"` / `--emit-no-mcq-tag`：样式隔离与 shard 标记
 
 ### 验收标准（最小可测）
 - 在**无工具声明/无评估指令**的输入上，模型不再自发输出 `[MCQ]` / `Answer:` / 评分段落。
-- 在**工具描述存在**且 alias 被随机化的场景下，仍能基于描述正确选工具/参数。
+- 在**工具描述齐全（包含 MCQ options 干扰项）**且 alias 被随机化的场景下，仍能基于描述正确选工具/参数。

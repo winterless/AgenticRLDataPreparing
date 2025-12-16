@@ -36,6 +36,10 @@ from scripts.utils.has_utils import load_jsonl, parse_arguments  # noqa: E402
 MODE_ORDER = ("available", "params", "param_values")
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 NO_MCQ_TAG_DEFAULT = "[NO_MCQ]"
+LOSS_MASK0_BEGIN_DEFAULT = "<LOSS_MASK=0>"
+LOSS_MASK0_END_DEFAULT = "</LOSS_MASK=0>"
+ANSWER_BEGIN_DEFAULT = "<ANSWER>"
+ANSWER_END_DEFAULT = "</ANSWER>"
 
 
 @dataclass(frozen=True)
@@ -236,30 +240,60 @@ def parse_args() -> argparse.Namespace:
             "If provided with no value, it disables emitting the end tag."
         ),
     )
+    # Emit toggles (default behavior is to SKIP these long blocks).
+    # This keeps the assembled text focused on tool-use + MCQ, and avoids
+    # training the model to auto-produce evaluation/metadata blocks.
     parser.add_argument(
-        "--skip-metadata",
+        "--emit-metadata",
         action="store_true",
-        help="Skip emitting 'Metadata:' section in assembled text (default: skip).",
+        help="Emit 'Metadata:' section in assembled text (default: skip).",
     )
     parser.add_argument(
-        "--skip-question-quality",
+        "--emit-question-quality",
         action="store_true",
-        help="Skip emitting 'Question quality assessment:' section (default: skip).",
+        help="Emit 'Question quality assessment:' section (default: skip).",
     )
     parser.add_argument(
-        "--skip-response-quality",
+        "--emit-response-quality",
         action="store_true",
-        help="Skip emitting 'Response quality assessment:' section (default: skip).",
+        help="Emit 'Response quality assessment:' section (default: skip).",
     )
     parser.add_argument(
         "--answer-redact",
         choices=["none", "redact", "drop"],
-        default="drop",
+        default="none",
         help=(
             "Control whether to reveal MCQ answers in assembled text. "
             "'none' keeps the original Answer line; 'redact' keeps the line but hides the value; "
             "'drop' removes the Answer line."
         ),
+    )
+    parser.add_argument(
+        "--emit-answer-tags",
+        action="store_true",
+        default=True,
+        help=(
+            "If set, wrap each MCQ 'Answer:' line with answer tags so you can strip them at inference time "
+            "without affecting other text. This does NOT change loss masking by itself."
+        ),
+    )
+    parser.add_argument(
+        "--no-answer-tags",
+        dest="emit_answer_tags",
+        action="store_false",
+        help="Disable emitting <ANSWER>...</ANSWER> wrappers (default: emit).",
+    )
+    parser.add_argument(
+        "--answer-begin-tag",
+        type=str,
+        default=ANSWER_BEGIN_DEFAULT,
+        help=f"Begin tag for answer blocks (default: {ANSWER_BEGIN_DEFAULT}).",
+    )
+    parser.add_argument(
+        "--answer-end-tag",
+        type=str,
+        default=ANSWER_END_DEFAULT,
+        help=f"End tag for answer blocks (default: {ANSWER_END_DEFAULT}).",
     )
     parser.add_argument(
         "--random-alias-per-record",
@@ -293,9 +327,37 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--emit-loss-mask-tags",
+        action="store_true",
+        default=True,
+        help=(
+            "If set, emit explicit tags to help downstream build token-level loss masks. "
+            "This script will wrap read-only/context blocks (e.g. tool declares, tool outputs) "
+            "with loss-mask=0 markers."
+        ),
+    )
+    parser.add_argument(
+        "--no-loss-mask-tags",
+        dest="emit_loss_mask_tags",
+        action="store_false",
+        help="Disable emitting loss mask tags (default: emit).",
+    )
+    parser.add_argument(
+        "--loss-mask0-begin-tag",
+        type=str,
+        default=LOSS_MASK0_BEGIN_DEFAULT,
+        help=f"Begin tag for loss_mask=0 blocks (default: {LOSS_MASK0_BEGIN_DEFAULT}).",
+    )
+    parser.add_argument(
+        "--loss-mask0-end-tag",
+        type=str,
+        default=LOSS_MASK0_END_DEFAULT,
+        help=f"End tag for loss_mask=0 blocks (default: {LOSS_MASK0_END_DEFAULT}).",
+    )
+    parser.add_argument(
         "--mcq-subsample",
         type=float,
-        default=1.0,
+        default=0.9,
         help=(
             "Subsample MCQ injection probability per record (0..1). "
             "When <1, some records will be emitted without MCQ blocks (deterministically by uuid)."
@@ -339,7 +401,29 @@ def parse_args() -> argparse.Namespace:
             "(one txt per conversation) for later inspection. Only used when MCQs are missing."
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    # Default: skip these blocks unless explicitly requested.
+    args.skip_metadata = not args.emit_metadata
+    args.skip_question_quality = not args.emit_question_quality
+    args.skip_response_quality = not args.emit_response_quality
+    return args
+
+
+def _append_loss_mask0_wrapped(
+    parts: list[str],
+    body_lines: list[str],
+    emit: bool,
+    begin_tag: str,
+    end_tag: str,
+) -> None:
+    """Append a block wrapped in loss_mask=0 tags (tags are on their own lines)."""
+    if not body_lines:
+        return
+    if emit:
+        parts.append(begin_tag)
+    parts.extend(body_lines)
+    if emit:
+        parts.append(end_tag)
 
 
 def load_records(path: Path) -> list[dict]:
@@ -530,6 +614,12 @@ def format_mcq_block(
     task_select_tag: str,
     task_select_end_tag: str,
     mcq_tag: str,
+    emit_loss_mask_tags: bool,
+    loss_mask0_begin_tag: str,
+    loss_mask0_end_tag: str,
+    emit_answer_tags: bool,
+    answer_begin_tag: str,
+    answer_end_tag: str,
     alias_map: dict[str, str] | None = None,
 ) -> str:
     header_bits = [f"[MCQ:{entry.get('mode')}"]
@@ -541,15 +631,19 @@ def format_mcq_block(
         header_bits.append(f"|function={fn}")
     header_bits.append("]")
     header = "".join(header_bits)
-    lines: list[str] = []
+    header_lines: list[str] = []
     if mcq_tag:
-        lines.append(mcq_tag)
-    if task_select_tag:
-        lines.append(task_select_tag)
+        header_lines.append(mcq_tag)
+    # If we're emitting loss-mask tags, prefer those as the sole marker for MCQ blocks.
+    # This keeps the text clean (no extra <TASK=SELECT> lines) and makes downstream masking easier.
+    if not emit_loss_mask_tags:
+        if task_select_tag:
+            header_lines.append(task_select_tag)
     options = entry.get("options", [])
     if alias_map and isinstance(options, list):
         options = [_apply_alias_to_option(opt, alias_map) for opt in options]
-    lines.extend(
+    body_lines: list[str] = []
+    body_lines.extend(
         [
             header,
             "Question:",
@@ -558,16 +652,34 @@ def format_mcq_block(
             indent(format_options(options), "  "),
         ]
     )
-    if entry.get("answer"):
+    answer_lines: list[str] = []
+    if entry.get("answer") and answer_redact != "drop":
+        if emit_answer_tags:
+            answer_lines.append(answer_begin_tag)
         if answer_redact == "none":
-            lines.append(f"Answer: the answer is {entry['answer']}")
+            answer_lines.append(f"Answer: the answer is {entry['answer']}")
         elif answer_redact == "redact":
-            lines.append("Answer: the answer is [ANSWER_REDACTED]")
-        elif answer_redact == "drop":
-            pass
-    if task_select_end_tag:
-        lines.append(task_select_end_tag)
-    return "\n".join(lines)
+            answer_lines.append("Answer: the answer is [ANSWER_REDACTED]")
+        if emit_answer_tags:
+            answer_lines.append(answer_end_tag)
+    if not emit_loss_mask_tags:
+        if task_select_end_tag:
+            body_lines.append(task_select_end_tag)
+
+    # When loss-mask tags are enabled, we make MCQ "read-only" EXCEPT the Answer line.
+    # - Question/options/header get loss_mask=0
+    # - Answer stays outside (loss_mask=1) so the model can learn the mapping.
+    if emit_loss_mask_tags:
+        out: list[str] = []
+        out.extend(header_lines)
+        out.append(loss_mask0_begin_tag)
+        out.extend(body_lines)
+        out.append(loss_mask0_end_tag)
+        out.extend(answer_lines)
+        return "\n".join(out)
+
+    out = header_lines + body_lines + answer_lines
+    return "\n".join(out)
 
 
 def assemble_record(
@@ -582,6 +694,12 @@ def assemble_record(
     record_has_mcq: bool,
     random_alias_per_record: bool,
     random_alias_seed: int,
+    emit_loss_mask_tags: bool,
+    loss_mask0_begin_tag: str,
+    loss_mask0_end_tag: str,
+    emit_answer_tags: bool,
+    answer_begin_tag: str,
+    answer_end_tag: str,
     skip_metadata: bool,
     skip_question_quality: bool,
     skip_response_quality: bool,
@@ -594,8 +712,13 @@ def assemble_record(
     if emit_no_mcq_tag and not record_has_mcq:
         parts.append(NO_MCQ_TAG_DEFAULT)
     if question:
-        parts.append("Question:")
-        parts.append(indent(question, "  "))
+        _append_loss_mask0_wrapped(
+            parts,
+            ["Question:", indent(question, "  ")],
+            emit_loss_mask_tags,
+            loss_mask0_begin_tag,
+            loss_mask0_end_tag,
+        )
     # Collect all function names from MCQ options
     per_record_mcq = mcqs.get(str(uuid), {})
     alias_map: dict[str, str] | None = None
@@ -618,7 +741,7 @@ def assemble_record(
     
     tool_lines = format_tools(record, extra_tools)
     if tool_lines:
-        parts.append("Available tools:")
+        # Treat the tool inventory as read-only context.
         if alias_map:
             aliased_lines: list[str] = []
             # `format_tools` returns text; do a simple safe replace only on "- name" prefixes.
@@ -635,11 +758,30 @@ def assemble_record(
                     aliased_lines.append(prefix + "- " + after.replace(name, aliased, 1))
                 else:
                     aliased_lines.append(line)
-            parts.extend(aliased_lines)
+            _append_loss_mask0_wrapped(
+                parts,
+                ["Available tools:", *aliased_lines],
+                emit_loss_mask_tags,
+                loss_mask0_begin_tag,
+                loss_mask0_end_tag,
+            )
         else:
-            parts.extend(tool_lines)
+            _append_loss_mask0_wrapped(
+                parts,
+                ["Available tools:", *tool_lines],
+                emit_loss_mask_tags,
+                loss_mask0_begin_tag,
+                loss_mask0_end_tag,
+            )
     messages = ensure_messages(record)
-    parts.append("Messages:")
+    # Treat structural section headers as read-only context.
+    _append_loss_mask0_wrapped(
+        parts,
+        ["Messages:"],
+        emit_loss_mask_tags,
+        loss_mask0_begin_tag,
+        loss_mask0_end_tag,
+    )
 
     awaiting_answer = False
 
@@ -659,6 +801,12 @@ def assemble_record(
                                 task_select_tag,
                                 task_select_end_tag,
                                 mcq_tag,
+                                emit_loss_mask_tags,
+                                loss_mask0_begin_tag,
+                                loss_mask0_end_tag,
+                                emit_answer_tags,
+                                answer_begin_tag,
+                                answer_end_tag,
                                 alias_map,
                             ),
                             "    ",
@@ -680,8 +828,13 @@ def assemble_record(
             if alias_map:
                 func_name = alias_map.get(func_name, func_name)
             payload = parse_json_like(message.get("content"))
-            parts.append(indent(f"function[{func_name}] @msg={idx}:", "  "))
-            parts.append(indent(format_json_block(payload), "    "))
+            body = [
+                indent(f"function[{func_name}] @msg={idx}:", "  "),
+                indent(format_json_block(payload), "    "),
+            ]
+            _append_loss_mask0_wrapped(
+                parts, body, emit_loss_mask_tags, loss_mask0_begin_tag, loss_mask0_end_tag
+            )
             continue
 
         content = message.get("content", "")
@@ -691,16 +844,28 @@ def assemble_record(
         header = role
         if role == "system" and isinstance(content, str) and "<|im_system|>" in content:
             header = f"{role} (tool_declare)"
-        parts.append(indent(f"{header}:", "  "))
-        if isinstance(content, str):
-            rendered = (
-                format_system_tool_declare(content)
-                if role == "system"
-                else content.strip()
+        # The tool declaration content is environment/context; we usually don't want
+        # the model to learn to generate it. Wrap it with loss_mask=0 when enabled.
+        if header == "system (tool_declare)":
+            body_lines = [indent(f"{header}:", "  ")]
+            if isinstance(content, str):
+                body_lines.append(indent(format_system_tool_declare(content), "    "))
+            else:
+                body_lines.append(indent(format_json_block(content), "    "))
+            _append_loss_mask0_wrapped(
+                parts,
+                body_lines,
+                emit_loss_mask_tags,
+                loss_mask0_begin_tag,
+                loss_mask0_end_tag,
             )
-            parts.append(indent(rendered, "    "))
         else:
-            parts.append(indent(format_json_block(content), "    "))
+            parts.append(indent(f"{header}:", "  "))
+            if isinstance(content, str):
+                rendered = content.strip() if role != "system" else format_system_tool_declare(content)
+                parts.append(indent(rendered, "    "))
+            else:
+                parts.append(indent(format_json_block(content), "    "))
 
     if record.get("target_tools"):
         targets = record["target_tools"]
@@ -747,6 +912,12 @@ def assemble_to_outputs(
     emit_no_mcq_tag: bool,
     random_alias_per_record: bool,
     random_alias_seed: int,
+    emit_loss_mask_tags: bool,
+    loss_mask0_begin_tag: str,
+    loss_mask0_end_tag: str,
+    emit_answer_tags: bool,
+    answer_begin_tag: str,
+    answer_end_tag: str,
     mcq_subsample: float,
     mcq_subsample_seed: int,
     split_shards: bool,
@@ -811,6 +982,12 @@ def assemble_to_outputs(
                     record_has_mcq=keep_mcq,
                     random_alias_per_record=random_alias_per_record,
                     random_alias_seed=random_alias_seed,
+                    emit_loss_mask_tags=emit_loss_mask_tags,
+                    loss_mask0_begin_tag=loss_mask0_begin_tag,
+                    loss_mask0_end_tag=loss_mask0_end_tag,
+                    emit_answer_tags=emit_answer_tags,
+                    answer_begin_tag=answer_begin_tag,
+                    answer_end_tag=answer_end_tag,
                     skip_metadata=skip_metadata,
                     skip_question_quality=skip_question_quality,
                     skip_response_quality=skip_response_quality,
@@ -1037,6 +1214,12 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
                 args.emit_no_mcq_tag,
                 args.random_alias_per_record,
                 args.random_alias_seed,
+                args.emit_loss_mask_tags,
+                args.loss_mask0_begin_tag,
+                args.loss_mask0_end_tag,
+                args.emit_answer_tags,
+                args.answer_begin_tag,
+                args.answer_end_tag,
                 args.mcq_subsample,
                 args.mcq_subsample_seed,
                 args.split_shards,
