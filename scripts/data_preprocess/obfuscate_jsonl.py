@@ -421,8 +421,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--alias-scope",
         choices=["record", "global"],
-        default="record",
-        help="Use per-record random aliases (record) or a global map (global).",
+        default="global",
+        help="Use per-record random aliases (record) or a global map (global). Default: global.",
     )
     parser.add_argument(
         "--alias-prefix",

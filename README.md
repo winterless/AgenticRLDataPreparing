@@ -68,11 +68,11 @@ PARAM_POOL="${PARAM_POOL:-${STATS_DIR}/param_pool.json}"
 # stage2 / ablation knobs (assemble_toucan.py)
 TASK_SELECT_TAG="${TASK_SELECT_TAG:-<TASK=SELECT>}"
 ANSWER_REDACT="${ANSWER_REDACT:-none}" # none|redact|drop
-MCQ_SUBSAMPLE="${MCQ_SUBSAMPLE:-0.9}"  # 0..1 (default: 90% records keep MCQs)
+MCQ_SUBSAMPLE="${MCQ_SUBSAMPLE:-1}"  # 0..1 (default: 90% records keep MCQs)
 MCQ_SUBSAMPLE_SEED="${MCQ_SUBSAMPLE_SEED:-0}"
 MCQ_TAG="${MCQ_TAG:-}"                 # e.g. "[MCQ]" (empty disables)
 EMIT_NO_MCQ_TAG="${EMIT_NO_MCQ_TAG:-0}" # 0|1 (1 emits [NO_MCQ] marker on no-MCQ records)
-RANDOM_ALIAS_PER_RECORD="${RANDOM_ALIAS_PER_RECORD:-0}" # 0|1
+RANDOM_ALIAS_PER_RECORD="${RANDOM_ALIAS_PER_RECORD:-1}" # 0|1
 RANDOM_ALIAS_SEED="${RANDOM_ALIAS_SEED:-0}"
 EMIT_LOSS_MASK_TAGS="${EMIT_LOSS_MASK_TAGS:-0}" # 0|1 (wrap context blocks with loss_mask=0 tags)
 LOSS_MASK0_BEGIN_TAG="${LOSS_MASK0_BEGIN_TAG:-<LOSS_MASK=0>}"
@@ -138,6 +138,7 @@ python scripts/data_preprocess/obfuscate_jsonl.py \
   -i "${RAW_ROOT}" \
   -o "${OBF_ROOT}" \
   --alias "${ALIAS_JSON}" \
+  --alias-scope global \
   --workers "${WORKERS}"
 
 # full
@@ -201,7 +202,8 @@ python scripts/analysis/pretty_toucan.py \
 python scripts/data_preprocess/obfuscate_jsonl.py \
   -i "${DEMO_RAW_JSONL}" \
   -o "${DEMO_JSONL}" \
-  --alias "${ALIAS_JSON}"
+  --alias "${ALIAS_JSON}" \
+  --alias-scope global
 
 # single
 python scripts/build_has/build_has_api_script.py \
@@ -298,12 +300,15 @@ python scripts/build_has/build_has_api_prompt.py \
 - **`scripts/data_preprocess/obfuscate_jsonl.py`**：按 alias 混淆 jsonl
   - **`-i` / `-o`**：输入/输出（文件或目录）
   - **`--alias`**：alias map 路径
+  - **`--alias-scope {global,record}`**：alias 作用域（默认 `global`；`record` 会对每条 record 重新随机一套 alias）
+  - **`--emit-alias-map <dir>`**：当 `--alias-scope record` 时可选开启：输出逐行对齐的 alias 日志（供后续构池做反映射聚合）
   - **`--workers`**：并行度（目录模式）
 
 - **`scripts/data_preprocess/build_param_pool.py`**：构建参数值池（供 param_values 负样本）
   - **`-i`**：混淆后的 jsonl（文件或目录）
   - **`-s`**：`function_stats.json`
   - **`-o`**：`param_pool.json`
+  - **`--alias-log-dir <dir>`**：可选：指向 `obfuscate_jsonl.py --emit-alias-map <dir>` 产出的日志目录；会把 `func_xxx -> 原始函数名` 映射回 canonical 后再聚合，避免 key 爆炸
   - **`--workers`**：并行度
 
 - **`scripts/build_has/build_has_api_script.py`**：生成单文件 MCQ（demo）
@@ -322,11 +327,14 @@ python scripts/build_has/build_has_api_prompt.py \
   - **`-m/--mcq-root`**：MCQ 根目录
   - **`--workers`**：并行度
   - **`--answer-redact {none,redact,drop}`**：控制是否输出 `Answer:` 行（默认 `drop`；训练版建议 `redact` 或 `drop`）
-  - **`--mcq-subsample <p>`**：按 uuid 确定性下采样 MCQ 注入比例（0..1，默认 `0.9`）
+  - **`--mcq-subsample <p>`**：按 uuid 确定性下采样 MCQ 注入比例（0..1，默认 `1`）
   - **`--mcq-subsample-seed <n>`**：下采样随机种子（用于可复现）
   - **`--mcq-tag "<tag>"`**：每个 MCQ block 前插入一行 tag（样式隔离/检索；空字符串等价于不输出）
   - **`--emit-no-mcq-tag`**：对无 MCQ 的 record 插入 `[NO_MCQ]` marker（用于 shard 标记/下游过滤）
-  - **`--random-alias-per-record` / `--random-alias-seed <n>`**：记录级随机 alias，覆盖 Available tools / MCQ / function_call.name
+  - **`--random-alias-per-record` / `--random-alias-seed <n>`**：记录级随机 alias，覆盖 Available tools / MCQ / function_call.name（默认开启；如需关闭用 `--no-random-alias-per-record`）
+  - **`--no-random-alias-per-record`**：关闭记录级随机 alias（默认开启）
+  - **`--emit-alias-map-dir <dir>`**：输出“记录级随机 alias”的对齐日志（默认：`<mcq_root>/alias_logs/assemble/`；文件名：`<conversation_filename>.alias_map.jsonl`，逐行记录 `{uuid, line_index, alias_map{original->alias}}`），便于从 assembled 中反查原名
+  - **`--no-emit-alias-map`**：关闭上述 alias 日志输出（默认开启；仅在 `--random-alias-per-record` 时生效）
   - **`--emit-loss-mask-tags`**：对“只读/上下文块”包一层 `<LOSS_MASK=0> ... </LOSS_MASK=0>`（便于下游做 token loss mask）
   - **`--loss-mask0-begin-tag` / `--loss-mask0-end-tag`**：自定义 loss_mask=0 标签
   - **`--split-shards`**：分 shard 输出 `*_mcq_assembled.*` 与 `*_no_mcq_assembled.*`
@@ -413,7 +421,7 @@ python scripts/build_has/build_has_api_prompt.py \
 P.S 清洗数据脚本
 ```
 # test
-python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to/dst_dir --workers 8
+python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to/dst_dir --workers 32
 ```
 
 ## 测试
@@ -451,6 +459,10 @@ python scripts/data_preprocess/clean_utf8_dir.py -i /path/to/src_dir -o /path/to
 - **记录级随机 alias**：同一条记录内自洽，不同记录重新随机（避免稳定可背的名字）。
   - 已实现（jsonl 侧）：`scripts/data_preprocess/obfuscate_jsonl.py --alias-scope record`
   - 已实现（组装输出侧）：`assemble_toucan.py --random-alias-per-record`
+  - 注意：如果你用 `obfuscate_jsonl.py --alias-scope record` 生成了“每条 record 一套随机 func_xxx”的混淆数据，那么构建 `param_pool.json` 时需要同时：
+    - 混淆时开启：`--emit-alias-map <alias_logs_dir>`
+    - 构池时传入：`build_param_pool.py --alias-log-dir <alias_logs_dir>`
+    否则会出现 `param_pool.json` 里几百万个 `func_xxx` key 的爆炸现象。
 - **弱化/隐藏名字（避免泄露原始函数名）**：已实现：`obfuscate_jsonl.py` 会重写 `available_tools` / `messages.function_call.name` / `tool_calls` / `<tools>...</tools>` 以及 MCQ 字段（`question/answer/options`）中的名称为 alias。
 - **MCQ 干扰项描述补全（让模型能“读描述选”）**：已实现：`assemble_toucan.py` 会将 **MCQ options 中出现但不在 `available_tools`** 的函数，从 `stats/function_stats.json` 补齐 `description + schema` 并合并进同一个 **Available tools** 列表（不创建 “Extended tools” 区块）。
   - 默认行为：若未显式传 `--stats`，会自动尝试加载 `stats/function_stats.json`

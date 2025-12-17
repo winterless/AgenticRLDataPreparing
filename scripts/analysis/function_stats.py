@@ -417,7 +417,13 @@ def main() -> None:
                 print(f"[WARN] Existing alias map not found: {args.alias_existing}")
             except ValueError as exc:
                 print(f"[WARN] Failed to load existing alias map: {exc}")
-        alias_map = build_alias_map(counter.keys(), existing)
+        # IMPORTANT:
+        # `counter` only counts function usage from messages (function_call / role=function),
+        # but tool names may also appear only in available_tools / metadata schema blocks.
+        # Those names exist in `meta_store` but not necessarily in `counter`, and must still
+        # be assigned an alias to avoid leaking original tool names during obfuscation.
+        all_names = set(counter.keys()) | set(meta_store.keys())
+        alias_map = build_alias_map(all_names, existing)
         save_alias_map(alias_map, args.alias_output)
         print(f"[INFO] Alias map written to {args.alias_output}")
 

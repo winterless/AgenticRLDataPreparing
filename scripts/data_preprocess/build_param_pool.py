@@ -45,12 +45,54 @@ from utils.has_utils import (
 
 WORKER_META: dict | None = None
 WORKER_MAX_VALUES: int = 0
+WORKER_ALIAS_LOG_DIR: str | None = None
 
 
-def _worker_init(meta_path: str, max_values: int):
-    global WORKER_META, WORKER_MAX_VALUES
+def _worker_init(meta_path: str, max_values: int, alias_log_dir: str | None):
+    global WORKER_META, WORKER_MAX_VALUES, WORKER_ALIAS_LOG_DIR
     WORKER_META = load_meta(Path(meta_path))
     WORKER_MAX_VALUES = max_values
+    WORKER_ALIAS_LOG_DIR = alias_log_dir
+
+
+def _iter_jsonl_with_index(path: Path):
+    """Yield (line_index, record) from a jsonl file, skipping malformed lines."""
+    with path.open("r", encoding="utf-8") as fh:
+        for idx, raw in enumerate(fh):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                yield idx, json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def _iter_alias_log_with_index(path: Path):
+    """
+    Yield (line_index, alias_to_original_map) from an alias map jsonl.
+
+    The alias log is emitted by obfuscate_jsonl.py --emit-alias-map and stores
+    per-record {"line_index": <int>, "alias_map": {original: alias, ...}}.
+    """
+    with path.open("r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            line_idx = obj.get("line_index")
+            amap = obj.get("alias_map")
+            if not isinstance(line_idx, int) or not isinstance(amap, dict):
+                continue
+            inv: dict[str, str] = {}
+            for original, alias in amap.items():
+                if isinstance(original, str) and isinstance(alias, str) and alias:
+                    inv[alias] = original
+            yield line_idx, inv
 
 
 def _worker_process(path_str: str):
@@ -59,10 +101,35 @@ def _worker_process(path_str: str):
     builder = PoolBuilder(WORKER_META, WORKER_MAX_VALUES)
     stats = {"records": 0, "function_calls": 0, "arguments": 0}
     path = Path(path_str)
-    for record in load_jsonl(path):
+    alias_iter = None
+    current_alias = None  # tuple[int, dict[str, str]] | None
+    if WORKER_ALIAS_LOG_DIR:
+        alias_path = Path(WORKER_ALIAS_LOG_DIR) / f"{path.name}.alias_map.jsonl"
+        if alias_path.exists():
+            alias_iter = _iter_alias_log_with_index(alias_path)
+            try:
+                current_alias = next(alias_iter)
+            except StopIteration:
+                current_alias = None
+
+    for line_idx, record in _iter_jsonl_with_index(path):
         stats["records"] += 1
+        alias_to_original = None
+        if alias_iter is not None:
+            # Advance alias log pointer until we reach (or pass) this record index.
+            while current_alias is not None and current_alias[0] < line_idx:
+                try:
+                    current_alias = next(alias_iter)
+                except StopIteration:
+                    current_alias = None
+                    break
+            if current_alias is not None and current_alias[0] == line_idx:
+                alias_to_original = current_alias[1]
+
         for _, fc in iter_function_calls(record):
             stats["function_calls"] += 1
+            if alias_to_original and isinstance(fc, dict) and isinstance(fc.get("name"), str):
+                fc["name"] = alias_to_original.get(fc["name"], fc["name"])
             parsed = parse_arguments(fc)
             if not parsed:
                 continue
@@ -112,6 +179,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=min(8, os.cpu_count() or 4),
         help="Number of worker processes (default: min(8, cpu_count)).",
+    )
+    parser.add_argument(
+        "--alias-log-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional directory containing per-file alias logs emitted by obfuscate_jsonl.py "
+            "(--emit-alias-map). If provided, function_call names will be de-aliased back to "
+            "canonical names before aggregation. Expected log filename: <input_filename>.alias_map.jsonl"
+        ),
     )
     return parser.parse_args()
 
@@ -331,6 +408,7 @@ def main() -> None:
         raise SystemExit(f"No jsonl files found under: {args.input}")
     meta = load_meta(args.stats)
     builder = PoolBuilder(meta, max_values=args.max_values)
+    alias_log_dir = str(args.alias_log_dir) if args.alias_log_dir else None
 
     total_records = 0
     total_calls = 0
@@ -339,7 +417,7 @@ def main() -> None:
     print(f"[INFO] Building param pool from {len(files)} files using {args.workers} workers.")
 
     if args.workers <= 1:
-        _worker_init(str(args.stats), args.max_values)
+        _worker_init(str(args.stats), args.max_values, alias_log_dir)
         for path in files:
             _, snapshot, stats = _worker_process(str(path))
             builder.merge_snapshot(snapshot)
@@ -350,7 +428,7 @@ def main() -> None:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=args.workers,
             initializer=_worker_init,
-            initargs=(str(args.stats), args.max_values),
+            initargs=(str(args.stats), args.max_values, alias_log_dir),
         ) as executor:
             futures = {
                 executor.submit(_worker_process, str(path)): path for path in files

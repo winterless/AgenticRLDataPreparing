@@ -81,8 +81,32 @@ def _iter_alias_candidate_names(record: dict, per_record_mcq: dict) -> set[str]:
     """Collect all function/tool names that should be aliased for this record."""
     names: set[str] = set()
 
+    def _is_probable_tool_name(val: str) -> bool:
+        """
+        Only alias tool/function identifiers, not MCQ param/arg-value text.
+
+        This prevents things like:
+          "max_results=1000; query=\\"aspirin\\""
+        from being treated as a "name" and getting replaced by func_xxx.
+        """
+        if not isinstance(val, str):
+            return False
+        s = val.strip()
+        if not s:
+            return False
+        # Exclude typical non-name patterns seen in params/param_values options.
+        if any(ch in s for ch in (" ", ",", "=", ";", "\"", "'")):
+            return False
+        if len(s) > 128:
+            return False
+        allowed = set("._:-/")
+        for ch in s:
+            if not (ch.isalnum() or ch in allowed):
+                return False
+        return True
+
     def add(val):
-        if isinstance(val, str) and val:
+        if isinstance(val, str) and val and _is_probable_tool_name(val):
             names.add(val)
 
     # available_tools
@@ -115,20 +139,23 @@ def _iter_alias_candidate_names(record: dict, per_record_mcq: dict) -> set[str]:
     for msg_mcqs in per_record_mcq.values():
         if not isinstance(msg_mcqs, dict):
             continue
-        for mode_entries in msg_mcqs.values():
+        for mode, mode_entries in msg_mcqs.items():
             if not isinstance(mode_entries, list):
                 continue
             for entry in mode_entries:
                 if not isinstance(entry, dict):
                     continue
                 add(entry.get("function_name"))
-                options = entry.get("options", [])
-                if isinstance(options, list):
-                    for opt in options:
-                        if isinstance(opt, str):
-                            add(opt)
-                        elif isinstance(opt, dict):
-                            add(opt.get("name"))
+                # Only alias tool-name options in AVAILABLE mode.
+                # Other modes (params/param_values) options are parameter names/values and should not be aliased.
+                if str(mode).lower() == "available":
+                    options = entry.get("options", [])
+                    if isinstance(options, list):
+                        for opt in options:
+                            if isinstance(opt, str):
+                                add(opt)
+                            elif isinstance(opt, dict):
+                                add(opt.get("name"))
 
     # target_tools
     target = parse_json_like(record.get("target_tools"))
@@ -298,16 +325,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--random-alias-per-record",
         action="store_true",
+        default=True,
         help=(
             "If set, generate a per-record random alias map and apply it consistently to "
-            "Available tools / MCQ options / function_call names in the assembled text."
+            "Available tools / MCQ options / function_call names in the assembled text. "
+            "Default: enabled."
         ),
+    )
+    parser.add_argument(
+        "--no-random-alias-per-record",
+        dest="random_alias_per_record",
+        action="store_false",
+        help="Disable per-record random aliasing in assembled outputs (default: enabled).",
     )
     parser.add_argument(
         "--random-alias-seed",
         type=int,
         default=0,
         help="Seed used for deterministic --random-alias-per-record alias generation (default: 0).",
+    )
+    parser.add_argument(
+        "--emit-alias-map-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory to write per-record random alias logs as jsonl. "
+            "When enabled, emits <conversation_filename>.alias_map.jsonl with "
+            "{uuid, record_id, line_index, alias_map{original->alias}} per record. "
+            "Default: <mcq_root>/alias_logs/assemble/ (auto). Only effective with --random-alias-per-record."
+        ),
+    )
+    parser.add_argument(
+        "--no-emit-alias-map",
+        dest="emit_alias_map",
+        action="store_false",
+        default=True,
+        help="Disable emitting per-record random alias logs (default: emit when --random-alias-per-record is set).",
     )
     parser.add_argument(
         "--mcq-tag",
@@ -433,6 +486,35 @@ def load_records(path: Path) -> list[dict]:
     data = json.loads(text)
     if isinstance(data, list):
         return data
+    raise ValueError(f"Unsupported JSON structure in {path}")
+
+
+def iter_records_with_index(path: Path):
+    """
+    Yield (line_index, record) pairs.
+
+    For .jsonl, line_index matches the raw line number (0-based) in the source file,
+    including blank/malformed lines (those lines are skipped but still advance the index).
+    For .json (list), line_index is the list index.
+    """
+    if path.suffix == ".jsonl":
+        with path.open("r", encoding="utf-8") as fh:
+            for idx, raw in enumerate(fh):
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    yield idx, json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+        return
+    text = path.read_text(encoding="utf-8")
+    data = json.loads(text)
+    if isinstance(data, list):
+        for idx, record in enumerate(data):
+            if isinstance(record, dict):
+                yield idx, record
+        return
     raise ValueError(f"Unsupported JSON structure in {path}")
 def build_mcq_index(paths: Iterable[Path | None]):
     index: dict[str, dict[int, dict[str, list[dict]]]] = defaultdict(
@@ -704,6 +786,7 @@ def assemble_record(
     skip_question_quality: bool,
     skip_response_quality: bool,
     stats_meta: dict[str, dict] | None = None,
+    alias_map: dict[str, str] | None = None,
 ) -> str:
     parts: list[str] = []
     uuid = record.get("uuid") or record.get("record_uuid") or "unknown"
@@ -721,8 +804,7 @@ def assemble_record(
         )
     # Collect all function names from MCQ options
     per_record_mcq = mcqs.get(str(uuid), {})
-    alias_map: dict[str, str] | None = None
-    if random_alias_per_record:
+    if alias_map is None and random_alias_per_record:
         alias_names = _iter_alias_candidate_names(record, per_record_mcq)
         alias_map = _build_random_alias_map(alias_names, str(uuid), random_alias_seed)
     mcq_func_names = _collect_mcq_function_names(per_record_mcq) if stats_meta else set()
@@ -912,6 +994,8 @@ def assemble_to_outputs(
     emit_no_mcq_tag: bool,
     random_alias_per_record: bool,
     random_alias_seed: int,
+    emit_alias_map: bool,
+    alias_map_dir: Path | None,
     emit_loss_mask_tags: bool,
     loss_mask0_begin_tag: str,
     loss_mask0_end_tag: str,
@@ -938,12 +1022,11 @@ def assemble_to_outputs(
             if not path or not path.exists():
                 raise FileNotFoundError(f"{label} MCQ missing: {path}")
 
-    records = load_records(conversation_path)
     if skip_mcq:
         mcq_index, mcq_total = {}, 0
     else:
         mcq_index, mcq_total = build_mcq_index([available_path, params_path, param_values_path])
-    to_emit = records
+    to_emit = iter_records_with_index(conversation_path)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_no_mcq_path = _derive_no_mcq_path(output_path) if split_shards else None
@@ -961,18 +1044,41 @@ def assemble_to_outputs(
     dropped_jsonl = 0
     dropped_text = 0
     dropped_missing = 0
+    alias_fh = None
+    if random_alias_per_record and emit_alias_map:
+        # Default naming: follow obfuscate_jsonl.py convention (<input>.alias_map.jsonl),
+        # but keep it in a separate directory dedicated to assembled outputs.
+        if alias_map_dir is None:
+            alias_map_dir = output_path.parent / "alias_logs" / "assemble"
+        alias_map_dir.mkdir(parents=True, exist_ok=True)
+        alias_path = alias_map_dir / f"{conversation_path.name}.alias_map.jsonl"
+        alias_fh = alias_path.open("w", encoding="utf-8")
     try:
         with output_path.open("w", encoding="utf-8") as fh_mcq, (
             output_no_mcq_path.open("w", encoding="utf-8") if output_no_mcq_path else nullcontext()
         ) as fh_no:
-            for record in to_emit:
+            for line_idx, record in to_emit:
                 uuid = record.get("uuid") or record.get("record_uuid") or "unknown"
                 keep_mcq = (not skip_mcq) and _mcq_keep_for_uuid(
                     str(uuid), mcq_subsample, mcq_subsample_seed
                 )
+                per_record_mcq = mcq_index if keep_mcq else {}
+                alias_map = None
+                if random_alias_per_record:
+                    alias_names = _iter_alias_candidate_names(record, per_record_mcq.get(str(uuid), {}))
+                    alias_map = _build_random_alias_map(alias_names, str(uuid), random_alias_seed)
+                    if alias_fh is not None:
+                        alias_payload = {
+                            "uuid": record.get("uuid"),
+                            "record_id": record.get("record_id"),
+                            "line_index": int(line_idx),
+                            "alias_map": alias_map,
+                        }
+                        json.dump(alias_payload, alias_fh, ensure_ascii=False)
+                        alias_fh.write("\n")
                 base_text = assemble_record(
                     record,
-                    mcq_index if keep_mcq else {},
+                    per_record_mcq,
                     answer_redact,
                     show_function_name,
                     task_select_tag,
@@ -992,6 +1098,7 @@ def assemble_to_outputs(
                     skip_question_quality=skip_question_quality,
                     skip_response_quality=skip_response_quality,
                     stats_meta=stats_meta,
+                    alias_map=alias_map,
                 )
                 payload = {
                     "uuid": record.get("uuid") or record.get("record_uuid"),
@@ -1046,6 +1153,8 @@ def assemble_to_outputs(
                         )
 
     finally:
+        if alias_fh:
+            alias_fh.close()
         if text_fh:
             text_fh.close()
         if text_no_fh:
@@ -1176,6 +1285,11 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
         else args.task_select_end_tag
     )
 
+    # Default alias-log dir (only used when --random-alias-per-record is set).
+    alias_map_dir: Path | None = args.emit_alias_map_dir
+    if alias_map_dir is None and args.emit_alias_map:
+        alias_map_dir = (mcq_root / "alias_logs" / "assemble").resolve()
+
     jobs, warnings = discover_batch_jobs(
         conv_root,
         mcq_root,
@@ -1214,6 +1328,8 @@ def run_batch(conv_root: Path, mcq_root: Path, args: argparse.Namespace) -> None
                 args.emit_no_mcq_tag,
                 args.random_alias_per_record,
                 args.random_alias_seed,
+                args.emit_alias_map,
+                alias_map_dir,
                 args.emit_loss_mask_tags,
                 args.loss_mask0_begin_tag,
                 args.loss_mask0_end_tag,
